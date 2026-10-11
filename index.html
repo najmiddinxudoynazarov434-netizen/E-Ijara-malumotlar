@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoJSON Birlashtiruvchi va Konverter</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
+        body { display: flex; height: 100vh; overflow: hidden; }
+        #sidebar { width: 380px; background: #f8f9fa; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 15px; overflow-y: auto; }
+        #map { flex-grow: 1; height: 100%; }
+        h2 { font-size: 18px; margin-bottom: 15px; color: #333; }
+        .section { margin-bottom: 20px; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .section label { font-weight: bold; font-size: 13px; display: block; margin-bottom: 8px; color: #555; }
+        input[type="file"] { width: 100%; font-size: 12px; }
+        button { background: #2ea44f; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; width: 100%; margin-top: 5px; font-weight: bold; }
+        button:hover { background: #2c974b; }
+        .btn-secondary { background: #0366d6; }
+        .btn-secondary:hover { background: #005cc5; }
+        .btn-danger { background: #d73a49; }
+        .btn-danger:hover { background: #cb2431; }
+        ul { list-style: none; margin-top: 8px; max-height: 120px; overflow-y: auto; font-size: 12px; }
+        li { padding: 4px 6px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        table { width: 100%; font-size: 11px; border-collapse: collapse; margin-top: 5px; }
+        th, td { border: 1px solid #ddd; padding: 4px; text-align: left; }
+        th { background: #f1f8ff; }
+        .table-container { max-height: 150px; overflow-y: auto; margin-top: 5px; }
+        @media(max-width: 768px) {
+            body { flex-direction: column; }
+            #sidebar { width: 100%; height: 50vh; }
+            #map { height: 50vh; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2>🗺️ GeoJSON Birlashtiruvchi</h2>
+        
+        <div class="section">
+            <label>GeoJSON fayllarni yuklash:</label>
+            <input type="file" id="fileInput" accept=".geojson,.json" multiple>
+            <ul id="fileList"></ul>
+        </div>
+
+        <div class="section">
+            <label>Qatlamlarni Boshqarish:</label>
+            <button onclick="mergeLayers()">Barcha qatlamlarni birlashtirish (Merge)</button>
+            <button class="btn-danger" onclick="clearAll()" style="margin-top: 8px;">Tozalash</button>
+        </div>
+
+        <div class="section">
+            <label>Eksport qilish (Yuklab olish):</label>
+            <button class="btn-secondary" onclick="exportGeoJSON()">GeoJSON sifatida saqlash</button>
+            <button class="btn-secondary" onclick="exportKML()" style="margin-top: 8px;">KML formatiga o'tkazish</button>
+            <button class="btn-secondary" onclick="exportCSV()" style="margin-top: 8px;">Excel (CSV) formatiga olish</button>
+        </div>
+
+        <div class="section">
+            <label>Atributlar Jadvali:</label>
+            <div class="table-container">
+                <table id="attrTable">
+                    <thead><tr><th>№</th><th>Ma'lumotlar</th></tr></thead>
+                    <tbody><tr><td colspan="2" style="text-align:center; color:#777;">Ma'lumot yo'q</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([41.2995, 69.2401], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        let featureCollection = {
+            type: "FeatureCollection",
+            features: []
+        };
+        let currentLayer = null;
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const files = e.target.files;
+            const fileListEl = document.getElementById('fileList');
+
+            for (let file of files) {
+                const li = document.createElement('li');
+                li.innerHTML = `<span>${file.name}</span>`;
+                fileListEl.appendChild(li);
+
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    try {
+                        const json = JSON.parse(evt.target.result);
+                        if (json.type === "FeatureCollection") {
+                            featureCollection.features.push(...json.features);
+                        } else if (json.type === "Feature") {
+                            featureCollection.features.push(json);
+                        }
+                        updateMapAndTable();
+                    } catch (err) {
+                        alert("Faylni o'qishda xatolik: " + file.name);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        function updateMapAndTable() {
+            if (currentLayer) {
+                map.removeLayer(currentLayer);
+            }
+
+            currentLayer = L.geoJSON(featureCollection, {
+                onEachFeature: function (feature, layer) {
+                    if (feature.properties) {
+                        let popupContent = "<div style='max-height:150px; overflow-y:auto;'><b>Xossalar:</b><br>";
+                        for (let key in feature.properties) {
+                            popupContent += `<b>${key}:</b> ${feature.properties[key]}<br>`;
+                        }
+                        popupContent += "</div>";
+                        layer.bindPopup(popupContent);
+                    }
+                }
+            }).addTo(map);
+
+            if (featureCollection.features.length > 0) {
+                map.fitBounds(currentLayer.getBounds());
+            }
+
+            updateTable();
+        }
+
+        function mergeLayers() {
+            alert("Barcha yuklangan fayllar muvaffaqiyatli bitta qatlamga birlashtirildi!");
+            updateMapAndTable();
+        }
+
+        function clearAll() {
+            featureCollection = { type: "FeatureCollection", features: [] };
+            if (currentLayer) map.removeLayer(currentLayer);
+            document.getElementById('fileList').innerHTML = '';
+            document.querySelector('#attrTable tbody').innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
+        }
+
+        function updateTable() {
+            const tbody = document.querySelector('#attrTable tbody');
+            tbody.innerHTML = '';
+            if (featureCollection.features.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
+                return;
+            }
+
+            featureCollection.features.forEach((feat, index) => {
+                const tr = document.createElement('tr');
+                let propStr = JSON.stringify(feat.properties || {});
+                tr.innerHTML = `<td>${index + 1}</td><td style="word-break:break-all;">${propStr}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function exportGeoJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(featureCollection));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "birlashgan_xarita.geojson");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+
+        function exportKML() {
+            let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
+            featureCollection.features.features.forEach?.((feat, idx) => {}); // placeholder
+            featureCollection.features.forEach((feat, idx) => {
+                kml += `  <Placemark>\n    <name>Obyekt ${idx + 1}</name>\n`;
+                if (feat.geometry && feat.geometry.type === "Point") {
+                    const coords = feat.geometry.coordinates;
+                    kml += `    <Point><coordinates>${coords[0]},${coords[1]}</coordinates></Point>\n`;
+                }
+                kml += `  </Placemark>\n`;
+            });
+            kml += `</Document>\n</kml>`;
+
+            const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'xarita.kml';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function exportCSV() {
+            if (featureCollection.features.length === 0) {
+                alert("Eksport qilish uchun ma'lumot yo'q!");
+                return;
+            }
+            let csvContent = "data:text/csv;charset=utf-8,Index,Properties\n";
+            featureCollection.features.forEach((feat, index) => {
+                let propStr = JSON.stringify(feat.properties || {}).replace(/,/g, ";");
+                csvContent += `${index + 1},"${propStr}"\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "atributlar.csv");
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        }
+    </script>
+</body>
+</html>
