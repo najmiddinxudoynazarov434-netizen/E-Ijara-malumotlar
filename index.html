@@ -99,7 +99,7 @@
                 reader.onload = function(evt) {
                     try {
                         const json = JSON.parse(evt.target.result);
-                        if (json.type === "FeatureCollection") {
+                        if (json.type === "FeatureCollection" && Array.isArray(json.features)) {
                             featureCollection.features.push(...json.features);
                         } else if (json.type === "Feature") {
                             featureCollection.features.push(json);
@@ -167,6 +167,10 @@
         }
 
         function exportGeoJSON() {
+            if (featureCollection.features.length === 0) {
+                alert("Eksport qilish uchun ma'lumot yo'q!");
+                return;
+            }
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(featureCollection));
             const downloadAnchor = document.createElement('a');
             downloadAnchor.setAttribute("href", dataStr);
@@ -177,8 +181,11 @@
         }
 
         function exportKML() {
+            if (featureCollection.features.length === 0) {
+                alert("Eksport qilish uchun ma'lumot yo'q!");
+                return;
+            }
             let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
-            featureCollection.features.features.forEach?.((feat, idx) => {}); // placeholder
             featureCollection.features.forEach((feat, idx) => {
                 kml += `  <Placemark>\n    <name>Obyekt ${idx + 1}</name>\n`;
                 if (feat.geometry && feat.geometry.type === "Point") {
