@@ -98,15 +98,23 @@
                 const reader = new FileReader();
                 reader.onload = function(evt) {
                     try {
-                        const json = JSON.parse(evt.target.result);
+                        let text = evt.target.result.trim();
+                        // Agar fayl boshida ortiqcha belgi bo'lsa tozalash
+                        if (text.charCodeAt(0) === 0xFEFF) {
+                            text = text.slice(1);
+                        }
+                        const json = JSON.parse(text);
+                        
                         if (json.type === "FeatureCollection" && Array.isArray(json.features)) {
                             featureCollection.features.push(...json.features);
                         } else if (json.type === "Feature") {
                             featureCollection.features.push(json);
+                        } else if (json.features) {
+                            featureCollection.features.push(...json.features);
                         }
                         updateMapAndTable();
                     } catch (err) {
-                        alert("Faylni o'qishda xatolik: " + file.name);
+                        alert("Faylni o'qishda xatolik (" + file.name + "): " + err.message);
                     }
                 };
                 reader.readAsText(file);
