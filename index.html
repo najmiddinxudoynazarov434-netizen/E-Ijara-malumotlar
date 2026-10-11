@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Google Map & Xarita Konverteri</title>
+    <title>Google Maps va Xarita Konverteri</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
@@ -38,7 +38,7 @@
 <body>
 
     <div id="sidebar">
-        <h2>🗺️ Google Map Konverteri</h2>
+        <h2>🗺️ Google Maps Konverteri</h2>
         
         <div class="section">
             <label>Fayllarni yuklash (GeoJSON, KML, SHP (.zip)):</label>
@@ -71,46 +71,32 @@
         </div>
     </div>
 
+    <!-- Google Maps konteyneri -->
     <div id="map"></div>
 
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <!-- TO-GEOJSON va SHP-JS -->
     <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
     <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
+    <!-- Google Maps API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=&callback=initMap" async defer></script>
 
     <script>
-        // Google Maps qatlamlari
-        const googleStandard = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
-            maxZoom: 20,
-            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-            attribution: '© Google Maps'
-        });
+        let map;
+        let featureCollection = { type: "FeatureCollection", features: [] };
+        let googleDataLayers = [];
 
-        const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
-            maxZoom: 20,
-            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-            attribution: '© Google Maps (Satellite)'
-        });
-
-        const map = L.map('map', {
-            center: [41.2995, 69.2401],
-            zoom: 12,
-            layers: [googleStandard] // Asosiy qilib Google standart xaritasi qo'yildi
-        });
-
-        // Xarita turi o'zgartirgich (Google Standart va Sun'iy yo'ldosh)
-        const baseMaps = {
-            "Google Standard": googleStandard,
-            "Google Satellite (Suni'y yo'ldosh)": googleHybrid
-        };
-        L.control.layers(baseMaps).addTo(map);
-
-        let featureCollection = {
-            type: "FeatureCollection",
-            features: []
-        };
-        let currentLayer = null;
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: 41.2995, lng: 69.2401 },
+                zoom: 12,
+                mapTypeId: 'roadmap', // 'roadmap' yoki 'satellite'
+                mapTypeControl: true,
+                mapTypeControlOptions: {
+                    style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
+                    position: google.maps.ControlPosition.TOP_RIGHT
+                }
+            });
+        }
 
         document.getElementById('fileInput').addEventListener('change', async function(e) {
             const files = e.target.files;
@@ -146,7 +132,7 @@
                     }
                 } catch (err) {
                     console.error("Faylni o'qish xatosi:", err);
-                    alert(`"${file.name}" faylini o'qishda xatolik yuz berdi. Formatni tekshiring.`);
+                    alert(`"${file.name}" faylini o'qishda xatolik yuz berdi.`);
                 }
             }
             updateMapAndTable();
@@ -170,29 +156,67 @@
         }
 
         function updateMapAndTable() {
-            if (currentLayer) {
-                map.removeLayer(currentLayer);
-            }
+            if (!map) return;
 
-            try {
-                currentLayer = L.geoJSON(featureCollection, {
-                    onEachFeature: function (feature, layer) {
-                        if (feature && feature.properties) {
-                            let popupContent = "<div style='max-height:150px; overflow-y:auto;'><b>Xossalar:</b><br>";
-                            for (let key in feature.properties) {
-                                popupContent += `<b>${key}:</b> ${feature.properties[key]}<br>`;
-                            }
-                            popupContent += "</div>";
-                            layer.bindPopup(popupContent);
-                        }
-                    }
-                }).addTo(map);
+            // Eski qatlamlarni tozalash
+            googleDataLayers.forEach(layer => layer.setMap(null));
+            googleDataLayers = [];
 
-                if (featureCollection.features.length > 0) {
-                    map.fitBounds(currentLayer.getBounds());
+            let bounds = new google.maps.LatLngBounds();
+            let hasPoints = false;
+
+            featureCollection.features.forEach((feat, index) => {
+                if (!feat.geometry) return;
+                const geom = feat.geometry;
+                const props = feat.properties || {};
+
+                // Popup uchun ma'lumot tayyorlash
+                let contentString = `<div style="max-height:150px; overflow-y:auto; font-size:12px;"><b>Xossalar:</b><br>`;
+                for (let key in props) {
+                    contentString += `<b>${key}:</b> ${props[key]}<br>`;
                 }
-            } catch (e) {
-                console.error("Xarita qatlamini chizishda xatolik:", e);
+                contentString += `</div>`;
+                const infowindow = new google.maps.InfoWindow({ content: contentString });
+
+                if (geom.type === "Polygon") {
+                    const coords = geom.coordinates[0].map(c => ({ lat: c[1], lng: c[0] }));
+                    const polygon = new google.maps.Polygon({
+                        paths: coords,
+                        strokeColor: "#1a73e8",
+                        strokeOpacity: 0.8,
+                        strokeWeight: 2,
+                        fillColor: "#1a73e8",
+                        fillOpacity: 0.35,
+                        map: map
+                    });
+
+                    polygon.addListener("click", (event) => {
+                        infowindow.setPosition(event.latLng);
+                        infowindow.open(map);
+                    });
+
+                    coords.forEach(c => { bounds.extend(c); hasPoints = true; });
+                    googleDataLayers.push(polygon);
+                } 
+                else if (geom.type === "Point") {
+                    const latLng = { lat: geom.coordinates[1], lng: geom.coordinates[0] };
+                    const marker = new google.maps.Marker({
+                        position: latLng,
+                        map: map
+                    });
+
+                    marker.addListener("click", () => {
+                        infowindow.open(map, marker);
+                    });
+
+                    bounds.extend(latLng);
+                    hasPoints = true;
+                    googleDataLayers.push(marker);
+                }
+            });
+
+            if (hasPoints) {
+                map.fitBounds(bounds);
             }
 
             updateTable();
@@ -200,273 +224,8 @@
 
         function clearAll() {
             featureCollection = { type: "FeatureCollection", features: [] };
-            if (currentLayer) map.removeLayer(currentLayer);
-            document.getElementById('fileList').innerHTML = '';
-            document.querySelector('#attrTable tbody').innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
-        }
-
-        function updateTable() {
-            const tbody = document.querySelector('#attrTable tbody');
-            tbody.innerHTML = '';
-            if (featureCollection.features.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
-                return;
-            }
-
-            featureCollection.features.forEach((feat, index) => {
-                const tr = document.createElement('tr');
-                let props = feat.properties || {};
-                let propStr = Object.keys(props).length > 0 ? JSON.stringify(props) : "Xossalar mavjud emas";
-                tr.innerHTML = `<td>${index + 1}</td><td style="word-break:break-all;">${propStr}</td>`;
-                tbody.appendChild(tr);
-            });
-        }
-
-        function exportGeoJSON() {
-            if (featureCollection.features.length === 0) {
-                alert("Eksport qilish uchun ma'lumot yo'q!");
-                return;
-            }
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(featureCollection));
-            const a = document.createElement('a');
-            a.href = dataStr;
-            a.download = "birlashgan_xarita.geojson";
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-        }
-
-        function exportKML() {
-            if (featureCollection.features.length === 0) {
-                alert("Eksport qilish uchun ma'lumot yo'q!");
-                return;
-            }
-            let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
-            featureCollection.features.forEach((feat, idx) => {
-                kml += `  <Placemark>\n    <name>Obyekt ${idx + 1}</name>\n`;
-                if (feat.geometry && feat.geometry.coordinates) {
-                    const coords = feat.geometry.coordinates;
-                    if (feat.geometry.type === "Point") {
-                        kml += `    <Point><coordinates>${coords[0]},${coords[1]}</coordinates></Point>\n`;
-                    }
-                }
-                kml += `  </Placemark>\n`;
-            });
-            kml += `</Document>\n</kml>`;
-
-            const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'xarita.kml';
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        function exportCSV() {
-            if (featureCollection.features.length === 0) {
-                alert("Eksport qilish uchun ma'lumot yo'q!");
-                return;
-            }
-            let csvContent = "data:text/csv;charset=utf-8,Index,Properties\n";
-            featureCollection.features.forEach((feat, index) => {
-                let propStr = JSON.stringify(feat.properties || {}).replace(/,/g, ";");
-                csvContent += `${index + 1},"${propStr}"\n`;
-            });
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement('a');
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", "atributlar.csv");
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-        }
-    </script>
-</body>
-</html><!DOCTYPE html>
-<html lang="uz">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xarita Fayllarini Boshqaruvchi va Konverter</title>
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
-        body { display: flex; height: 100vh; overflow: hidden; background: #f0f2f5; }
-        #sidebar { width: 400px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
-        #map { flex-grow: 1; height: 100%; }
-        h2 { font-size: 20px; margin-bottom: 20px; color: #1a73e8; display: flex; align-items: center; gap: 8px; }
-        .section { margin-bottom: 20px; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e1e4e8; }
-        .section label { font-weight: bold; font-size: 13px; display: block; margin-bottom: 8px; color: #333; }
-        input[type="file"] { width: 100%; font-size: 12px; padding: 8px; background: white; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; }
-        button { background: #2ea44f; color: white; border: none; padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; width: 100%; margin-top: 8px; font-weight: bold; transition: background 0.2s; }
-        button:hover { background: #2c974b; }
-        .btn-secondary { background: #0366d6; }
-        .btn-secondary:hover { background: #005cc5; }
-        .btn-danger { background: #d73a49; }
-        .btn-danger:hover { background: #cb2431; }
-        ul { list-style: none; margin-top: 10px; max-height: 120px; overflow-y: auto; font-size: 12px; }
-        li { padding: 6px 8px; background: white; margin-bottom: 4px; border-radius: 4px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
-        table { width: 100%; font-size: 11px; border-collapse: collapse; margin-top: 8px; background: white; }
-        th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
-        th { background: #f1f8ff; color: #333; }
-        .table-container { max-height: 160px; overflow-y: auto; margin-top: 5px; border-radius: 6px; border: 1px solid #ddd; }
-        .hint { font-size: 11px; color: #666; margin-top: 4px; }
-        @media(max-width: 768px) {
-            body { flex-direction: column; }
-            #sidebar { width: 100%; height: 55vh; }
-            #map { height: 45vh; }
-        }
-    </style>
-</head>
-<body>
-
-    <div id="sidebar">
-        <h2>🗺️ Xarita Konverteri</h2>
-        
-        <div class="section">
-            <label>Fayllarni yuklash (GeoJSON, KML, SHP (.zip)):</label>
-            <input type="file" id="fileInput" accept=".geojson,.json,.kml,.zip" multiple>
-            <div class="hint">Bir nechta faylni bir vaqtda tanlashingiz mumkin.</div>
-            <ul id="fileList"></ul>
-        </div>
-
-        <div class="section">
-            <label>Boshqarish:</label>
-            <button onclick="updateMapAndTable()">Xaritani yangilash & Birlashtirish</button>
-            <button class="btn-danger" onclick="clearAll()">Barchasini tozalash</button>
-        </div>
-
-        <div class="section">
-            <label>Eksport qilish (Yuklab olish):</label>
-            <button class="btn-secondary" onclick="exportGeoJSON()">GeoJSON formatida saqlash</button>
-            <button class="btn-secondary" onclick="exportKML()">KML formatiga o'tkazish</button>
-            <button class="btn-secondary" onclick="exportCSV()">Excel (CSV) formatiga olish</button>
-        </div>
-
-        <div class="section">
-            <label>Atributlar Jadvali:</label>
-            <div class="table-container">
-                <table id="attrTable">
-                    <thead><tr><th>№</th><th>Ma'lumotlar</th></tr></thead>
-                    <tbody><tr><td colspan="2" style="text-align:center; color:#777;">Ma'lumot yo'q</td></tr></tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <div id="map"></div>
-
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- TO-GEOJSON (KML uchun) va SHP-JS (.zip / Shapefile uchun) -->
-    <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
-    <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
-
-    <script>
-        const map = L.map('map').setView([41.2995, 69.2401], 12);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
-
-        let featureCollection = {
-            type: "FeatureCollection",
-            features: []
-        };
-        let currentLayer = null;
-
-        document.getElementById('fileInput').addEventListener('change', async function(e) {
-            const files = e.target.files;
-            const fileListEl = document.getElementById('fileList');
-
-            for (let file of files) {
-                const li = document.createElement('li');
-                li.innerHTML = `<span>${file.name}</span>`;
-                fileListEl.appendChild(li);
-
-                const fileName = file.name.toLowerCase();
-
-                try {
-                    if (fileName.endsWith('.geojson') || fileName.endsWith('.json')) {
-                        const text = await file.text();
-                        const json = JSON.parse(text);
-                        addParsedData(json);
-                    } 
-                    else if (fileName.endsWith('.kml')) {
-                        const text = await file.text();
-                        const dom = new DOMParser().parseFromString(text, 'text/xml');
-                        const converted = toGeoJSON.kml(dom);
-                        addParsedData(converted);
-                    } 
-                    else if (fileName.endsWith('.zip')) {
-                        // Shapefile (.zip) yuklanganda shpjs orqali o'qish
-                        const buffer = await file.arrayBuffer();
-                        const geojson = await shp(buffer);
-                        if (Array.isArray(geojson)) {
-                            geojson.forEach(item => addParsedData(item));
-                        } else {
-                            addParsedData(geojson);
-                        }
-                    }
-                } catch (err) {
-                    console.error("Faylni o'qish xatosi:", err);
-                    alert(`"${file.name}" faylini o'qishda xatolik yuz berdi. Formatni tekshiring.`);
-                }
-            }
-            updateMapAndTable();
-        });
-
-        function addParsedData(json) {
-            if (!json) return;
-            if (json.type === "FeatureCollection" && Array.isArray(json.features)) {
-                featureCollection.features.push(...json.features);
-            } else if (json.type === "Feature") {
-                featureCollection.features.push(json);
-            } else if (Array.isArray(json)) {
-                featureCollection.features.push(...json);
-            } else if (json.geometry) {
-                featureCollection.features.push({
-                    type: "Feature",
-                    geometry: json.geometry,
-                    properties: json.properties || {}
-                });
-            }
-        }
-
-        function updateMapAndTable() {
-            if (currentLayer) {
-                map.removeLayer(currentLayer);
-            }
-
-            try {
-                currentLayer = L.geoJSON(featureCollection, {
-                    onEachFeature: function (feature, layer) {
-                        if (feature && feature.properties) {
-                            let popupContent = "<div style='max-height:150px; overflow-y:auto;'><b>Xossalar:</b><br>";
-                            for (let key in feature.properties) {
-                                popupContent += `<b>${key}:</b> ${feature.properties[key]}<br>`;
-                            }
-                            popupContent += "</div>";
-                            layer.bindPopup(popupContent);
-                        }
-                    }
-                }).addTo(map);
-
-                if (featureCollection.features.length > 0) {
-                    map.fitBounds(currentLayer.getBounds());
-                }
-            } catch (e) {
-                console.error("Xarita qatlamini chizishda xatolik:", e);
-            }
-
-            updateTable();
-        }
-
-        function clearAll() {
-            featureCollection = { type: "FeatureCollection", features: [] };
-            if (currentLayer) map.removeLayer(currentLayer);
+            googleDataLayers.forEach(layer => layer.setMap(null));
+            googleDataLayers = [];
             document.getElementById('fileList').innerHTML = '';
             document.querySelector('#attrTable tbody').innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
         }
