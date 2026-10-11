@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Google Maps va Xarita Konverteri</title>
+    <title>Xarita Konverteri va Birlashtiruvchi</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
@@ -12,21 +12,21 @@
         #sidebar { width: 400px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
         #map { flex-grow: 1; height: 100%; }
         h2 { font-size: 20px; margin-bottom: 20px; color: #1a73e8; display: flex; align-items: center; gap: 8px; }
-        .section { margin-bottom: 20px; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e1e4e8; }
-        .section label { font-weight: bold; font-size: 13px; display: block; margin-bottom: 8px; color: #333; }
-        input[type="file"], select { width: 100%; font-size: 12px; padding: 8px; background: white; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; margin-top: 5px; }
+        .section { margin-bottom: 18px; background: #f8f9fa; padding: 14px; border-radius: 8px; border: 1px solid #e1e4e8; }
+        .section label { font-weight: bold; font-size: 13px; display: block; margin-bottom: 6px; color: #333; }
+        input[type="file"], select { width: 100%; font-size: 12px; padding: 8px; background: white; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; margin-top: 4px; }
         button { background: #2ea44f; color: white; border: none; padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; width: 100%; margin-top: 8px; font-weight: bold; transition: background 0.2s; }
         button:hover { background: #2c974b; }
         .btn-secondary { background: #0366d6; }
         .btn-secondary:hover { background: #005cc5; }
         .btn-danger { background: #d73a49; }
         .btn-danger:hover { background: #cb2431; }
-        ul { list-style: none; margin-top: 10px; max-height: 120px; overflow-y: auto; font-size: 12px; }
-        li { padding: 6px 8px; background: white; margin-bottom: 4px; border-radius: 4px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        ul { list-style: none; margin-top: 8px; max-height: 100px; overflow-y: auto; font-size: 12px; }
+        li { padding: 5px 8px; background: white; margin-bottom: 4px; border-radius: 4px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
         table { width: 100%; font-size: 11px; border-collapse: collapse; margin-top: 8px; background: white; }
         th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
         th { background: #f1f8ff; color: #333; }
-        .table-container { max-height: 160px; overflow-y: auto; margin-top: 5px; border-radius: 6px; border: 1px solid #ddd; }
+        .table-container { max-height: 140px; overflow-y: auto; margin-top: 5px; border-radius: 6px; border: 1px solid #ddd; }
         .hint { font-size: 11px; color: #666; margin-top: 4px; }
         @media(max-width: 768px) {
             body { flex-direction: column; }
@@ -38,7 +38,7 @@
 <body>
 
     <div id="sidebar">
-        <h2>🗺️ Google Maps Konverteri</h2>
+        <h2>🗺️ Xarita Konverteri</h2>
         
         <div class="section">
             <label>Fayllarni yuklash (GeoJSON, KML, SHP (.zip)):</label>
@@ -54,13 +54,13 @@
         </div>
 
         <div class="section">
-            <label>Eksport qilish (Yuklab olish):</label>
+            <label>Eksport qilish va Konvertatsiya:</label>
             <button class="btn-secondary" onclick="exportGeoJSON()">GeoJSON formatida saqlash</button>
             
             <div style="margin-top: 10px;">
-                <label for="nameColumnSelect">KML uchun nom ustunini tanlang:</label>
+                <label for="nameColumnSelect">KML uchun nom ustuni (Masalan: regnum):</label>
                 <select id="nameColumnSelect">
-                    <option value="">-- Standart (Avtomatik) --</option>
+                    <option value="">-- Avtomatik (Obyekt raqami) --</option>
                 </select>
             </div>
             <button class="btn-secondary" onclick="exportKML()">KML formatiga o'tkazish</button>
@@ -79,33 +79,41 @@
         </div>
     </div>
 
-    <!-- Google Maps konteyneri -->
     <div id="map"></div>
 
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <!-- TO-GEOJSON va SHP-JS -->
     <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
     <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
-    <!-- Google Maps API -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=&callback=initMap" async defer></script>
 
     <script>
-        let map;
-        let featureCollection = { type: "FeatureCollection", features: [] };
-        let googleDataLayers = [];
-        let availableKeys = new Set();
+        // Xarita qatlamlari
+        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        });
 
-        function initMap() {
-            map = new google.maps.Map(document.getElementById('map'), {
-                center: { lat: 41.2995, lng: 69.2401 },
-                zoom: 12,
-                mapTypeId: 'roadmap',
-                mapTypeControl: true,
-                mapTypeControlOptions: {
-                    style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
-                    position: google.maps.ControlPosition.TOP_RIGHT
-                }
-            });
-        }
+        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: '© Esri & World Imagery'
+        });
+
+        const map = L.map('map', {
+            center: [41.2995, 69.2401],
+            zoom: 12,
+            layers: [osmLayer]
+        });
+
+        const baseMaps = {
+            "Standard (Sxema)": osmLayer,
+            "Satellite (Sun'iy yo'ldosh)": satelliteLayer
+        };
+        L.control.layers(baseMaps).addTo(map);
+
+        let featureCollection = { type: "FeatureCollection", features: [] };
+        let currentLayer = null;
+        let availableKeys = new Set();
 
         document.getElementById('fileInput').addEventListener('change', async function(e) {
             const files = e.target.files;
@@ -171,79 +179,44 @@
 
         function updateColumnSelector() {
             const select = document.getElementById('nameColumnSelect');
-            select.innerHTML = '<option value="">-- Standart (Avtomatik) --</option>';
+            select.innerHTML = '<option value="">-- Avtomatik (Obyekt raqami) --</option>';
             
             availableKeys.forEach(key => {
                 const opt = document.createElement('option');
                 opt.value = key;
                 opt.textContent = key;
+                // Agar ustun nomi regnum bo'lsa uni avtomatik belgilaydi
                 if (key.toLowerCase() === 'regnum' || key.toLowerCase() === 'reg_num') {
-                    opt.selected = true; // Agar regnum bo'lsa avtomatik tanlaydi
+                    opt.selected = true;
                 }
                 select.appendChild(opt);
             });
         }
 
         function updateMapAndTable() {
-            if (!map) return;
+            if (currentLayer) {
+                map.removeLayer(currentLayer);
+            }
 
-            googleDataLayers.forEach(layer => layer.setMap(null));
-            googleDataLayers = [];
+            try {
+                currentLayer = L.geoJSON(featureCollection, {
+                    onEachFeature: function (feature, layer) {
+                        if (feature && feature.properties) {
+                            let popupContent = "<div style='max-height:150px; overflow-y:auto; font-size:12px;'><b>Xossalar:</b><br>";
+                            for (let key in feature.properties) {
+                                popupContent += `<b>${key}:</b> ${feature.properties[key]}<br>`;
+                            }
+                            popupContent += "</div>";
+                            layer.bindPopup(popupContent);
+                        }
+                    }
+                }).addTo(map);
 
-            let bounds = new google.maps.LatLngBounds();
-            let hasPoints = false;
-
-            featureCollection.features.forEach((feat, index) => {
-                if (!feat.geometry) return;
-                const geom = feat.geometry;
-                const props = feat.properties || {};
-
-                let contentString = `<div style="max-height:150px; overflow-y:auto; font-size:12px;"><b>Xossalar:</b><br>`;
-                for (let key in props) {
-                    contentString += `<b>${key}:</b> ${props[key]}<br>`;
+                if (featureCollection.features.length > 0) {
+                    map.fitBounds(currentLayer.getBounds());
                 }
-                contentString += `</div>`;
-                const infowindow = new google.maps.InfoWindow({ content: contentString });
-
-                if (geom.type === "Polygon") {
-                    const coords = geom.coordinates[0].map(c => ({ lat: c[1], lng: c[0] }));
-                    const polygon = new google.maps.Polygon({
-                        paths: coords,
-                        strokeColor: "#1a73e8",
-                        strokeOpacity: 0.8,
-                        strokeWeight: 2,
-                        fillColor: "#1a73e8",
-                        fillOpacity: 0.35,
-                        map: map
-                    });
-
-                    polygon.addListener("click", (event) => {
-                        infowindow.setPosition(event.latLng);
-                        infowindow.open(map);
-                    });
-
-                    coords.forEach(c => { bounds.extend(c); hasPoints = true; });
-                    googleDataLayers.push(polygon);
-                } 
-                else if (geom.type === "Point") {
-                    const latLng = { lat: geom.coordinates[1], lng: geom.coordinates[0] };
-                    const marker = new google.maps.Marker({
-                        position: latLng,
-                        map: map
-                    });
-
-                    marker.addListener("click", () => {
-                        infowindow.open(map, marker);
-                    });
-
-                    bounds.extend(latLng);
-                    hasPoints = true;
-                    googleDataLayers.push(marker);
-                }
-            });
-
-            if (hasPoints) {
-                map.fitBounds(bounds);
+            } catch (e) {
+                console.error("Xaritani chizishda xatolik:", e);
             }
 
             updateTable();
@@ -252,10 +225,9 @@
         function clearAll() {
             featureCollection = { type: "FeatureCollection", features: [] };
             availableKeys.clear();
-            googleDataLayers.forEach(layer => layer.setMap(null));
-            googleDataLayers = [];
+            if (currentLayer) map.removeLayer(currentLayer);
             document.getElementById('fileList').innerHTML = '';
-            document.getElementById('nameColumnSelect').innerHTML = '<option value="">-- Standart (Avtomatik) --</option>';
+            document.getElementById('nameColumnSelect').innerHTML = '<option value="">-- Avtomatik (Obyekt raqami) --</option>';
             document.querySelector('#attrTable tbody').innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
         }
 
@@ -292,7 +264,7 @@
 
         function exportKML() {
             if (featureCollection.features.length === 0) {
-                alert("Eksport qilish uchun ma'lumot yo'qcharts!");
+                alert("Eksport qilish uchun ma'lumot yo'q!");
                 return;
             }
 
@@ -309,16 +281,28 @@
                 kml += `  <Placemark>\n`;
                 kml += `    <name>${objName}</name>\n`;
 
-                if (feat.geometry) {
+                if (feat.geometry && feat.geometry.coordinates) {
                     const geom = feat.geometry;
-                    if (geom.type === "Point" && geom.coordinates) {
-                        kml += `    <Point><coordinates>${geom.coordinates[0]},${geom.coordinates[1]}</coordinates></Point>\n`;
-                    } else if (geom.type === "Polygon" && geom.coordinates) {
+                    const coords = geom.coordinates;
+                    
+                    if (geom.type === "Point") {
+                        kml += `    <Point><coordinates>${coords[0]},${coords[1]}</coordinates></Point>\n`;
+                    } else if (geom.type === "Polygon") {
                         kml += `    <Polygon>\n      <outerBoundaryIs>\n        <LinearRing>\n          <coordinates>\n`;
-                        geom.coordinates[0].forEach(coord => {
-                            kml += `            ${coord[0]},${coord[1]},0\n`;
+                        coords[0].forEach(c => {
+                            kml += `            ${c[0]},${c[1]},0\n`;
                         });
                         kml += `          </coordinates>\n        </LinearRing>\n      </outerBoundaryIs>\n    </Polygon>\n`;
+                    } else if (geom.type === "MultiPolygon") {
+                        kml += `    <MultiGeometry>\n`;
+                        coords.forEach(poly => {
+                            kml += `      <Polygon>\n        <outerBoundaryIs>\n          <LinearRing>\n            <coordinates>\n`;
+                            poly[0].forEach(c => {
+                                kml += `              ${c[0]},${c[1]},0\n`;
+                            });
+                            kml += `            </coordinates>\n          </LinearRing>\n        </outerBoundaryIs>\n      </Polygon>\n`;
+                        });
+                        kml += `    </MultiGeometry>\n`;
                     }
                 }
                 kml += `  </Placemark>\n`;
