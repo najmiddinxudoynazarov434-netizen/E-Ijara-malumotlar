@@ -99,22 +99,25 @@
                 reader.onload = function(evt) {
                     try {
                         let text = evt.target.result.trim();
-                        // Agar fayl boshida ortiqcha belgi bo'lsa tozalash
                         if (text.charCodeAt(0) === 0xFEFF) {
                             text = text.slice(1);
                         }
+                        
                         const json = JSON.parse(text);
                         
                         if (json.type === "FeatureCollection" && Array.isArray(json.features)) {
                             featureCollection.features.push(...json.features);
                         } else if (json.type === "Feature") {
                             featureCollection.features.push(json);
-                        } else if (json.features) {
-                            featureCollection.features.push(...json.features);
+                        } else if (json.geometry || json.coordinates) {
+                            featureCollection.features.push({ type: "Feature", geometry: json.geometry || json, properties: json.properties || {} });
+                        } else if (Array.isArray(json)) {
+                            featureCollection.features.push(...json);
                         }
                         updateMapAndTable();
                     } catch (err) {
-                        alert("Faylni o'qishda xatolik (" + file.name + "): " + err.message);
+                        console.error("JSON Parse Error:", err);
+                        alert("Faylni o'qishda xatolik (" + file.name + "). Fayl haqiqiy JSON formatda emas.");
                     }
                 };
                 reader.readAsText(file);
@@ -126,21 +129,25 @@
                 map.removeLayer(currentLayer);
             }
 
-            currentLayer = L.geoJSON(featureCollection, {
-                onEachFeature: function (feature, layer) {
-                    if (feature.properties) {
-                        let popupContent = "<div style='max-height:150px; overflow-y:auto;'><b>Xossalar:</b><br>";
-                        for (let key in feature.properties) {
-                            popupContent += `<b>${key}:</b> ${feature.properties[key]}<br>`;
+            try {
+                currentLayer = L.geoJSON(featureCollection, {
+                    onEachFeature: function (feature, layer) {
+                        if (feature && feature.properties) {
+                            let popupContent = "<div style='max-height:150px; overflow-y:auto;'><b>Xossalar:</b><br>";
+                            for (let key in feature.properties) {
+                                popupContent += `<b>${key}:</b> ${feature.properties[key]}<br>`;
+                            }
+                            popupContent += "</div>";
+                            layer.bindPopup(popupContent);
                         }
-                        popupContent += "</div>";
-                        layer.bindPopup(popupContent);
                     }
-                }
-            }).addTo(map);
+                }).addTo(map);
 
-            if (featureCollection.features.length > 0) {
-                map.fitBounds(currentLayer.getBounds());
+                if (featureCollection.features.length > 0) {
+                    map.fitBounds(currentLayer.getBounds());
+                }
+            } catch (e) {
+                console.error("Leaflet Layer Error:", e);
             }
 
             updateTable();
@@ -196,9 +203,13 @@
             let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
             featureCollection.features.forEach((feat, idx) => {
                 kml += `  <Placemark>\n    <name>Obyekt ${idx + 1}</name>\n`;
-                if (feat.geometry && feat.geometry.type === "Point") {
-                    const coords = feat.geometry.coordinates;
-                    kml += `    <Point><coordinates>${coords[0]},${coords[1]}</coordinates></Point>\n`;
+                if (feat.geometry && feat.geometry.coordinates) {
+                    // Koordinatalarni to'g'ri chiqarish
+                    const type = feat.geometry.type;
+                    if (type === "Point") {
+                        const coords = feat.geometry.coordinates;
+                        kml += `    <Point><coordinates>${coords[0]},${coords[1]}</coordinates></Point>\n`;
+                    }
                 }
                 kml += `  </Placemark>\n`;
             });
