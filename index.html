@@ -14,7 +14,7 @@
         h2 { font-size: 20px; margin-bottom: 20px; color: #1a73e8; display: flex; align-items: center; gap: 8px; }
         .section { margin-bottom: 20px; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e1e4e8; }
         .section label { font-weight: bold; font-size: 13px; display: block; margin-bottom: 8px; color: #333; }
-        input[type="file"] { width: 100%; font-size: 12px; padding: 8px; background: white; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; }
+        input[type="file"], select { width: 100%; font-size: 12px; padding: 8px; background: white; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; margin-top: 5px; }
         button { background: #2ea44f; color: white; border: none; padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; width: 100%; margin-top: 8px; font-weight: bold; transition: background 0.2s; }
         button:hover { background: #2c974b; }
         .btn-secondary { background: #0366d6; }
@@ -56,8 +56,16 @@
         <div class="section">
             <label>Eksport qilish (Yuklab olish):</label>
             <button class="btn-secondary" onclick="exportGeoJSON()">GeoJSON formatida saqlash</button>
+            
+            <div style="margin-top: 10px;">
+                <label for="nameColumnSelect">KML uchun nom ustunini tanlang:</label>
+                <select id="nameColumnSelect">
+                    <option value="">-- Standart (Avtomatik) --</option>
+                </select>
+            </div>
             <button class="btn-secondary" onclick="exportKML()">KML formatiga o'tkazish</button>
-            <button class="btn-secondary" onclick="exportCSV()">Excel (CSV) formatiga olish</button>
+            
+            <button class="btn-secondary" onclick="exportCSV()" style="margin-top: 8px;">Excel (CSV) formatiga olish</button>
         </div>
 
         <div class="section">
@@ -84,12 +92,13 @@
         let map;
         let featureCollection = { type: "FeatureCollection", features: [] };
         let googleDataLayers = [];
+        let availableKeys = new Set();
 
         function initMap() {
             map = new google.maps.Map(document.getElementById('map'), {
                 center: { lat: 41.2995, lng: 69.2401 },
                 zoom: 12,
-                mapTypeId: 'roadmap', // 'roadmap' yoki 'satellite'
+                mapTypeId: 'roadmap',
                 mapTypeControl: true,
                 mapTypeControlOptions: {
                     style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
@@ -136,29 +145,48 @@
                 }
             }
             updateMapAndTable();
+            updateColumnSelector();
         });
 
         function addParsedData(json) {
             if (!json) return;
+            let feats = [];
             if (json.type === "FeatureCollection" && Array.isArray(json.features)) {
-                featureCollection.features.push(...json.features);
+                feats = json.features;
             } else if (json.type === "Feature") {
-                featureCollection.features.push(json);
+                feats = [json];
             } else if (Array.isArray(json)) {
-                featureCollection.features.push(...json);
+                feats = json;
             } else if (json.geometry) {
-                featureCollection.features.push({
-                    type: "Feature",
-                    geometry: json.geometry,
-                    properties: json.properties || {}
-                });
+                feats = [{ type: "Feature", geometry: json.geometry, properties: json.properties || {} }];
             }
+
+            feats.forEach(f => {
+                if (f.properties) {
+                    Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                }
+                featureCollection.features.push(f);
+            });
+        }
+
+        function updateColumnSelector() {
+            const select = document.getElementById('nameColumnSelect');
+            select.innerHTML = '<option value="">-- Standart (Avtomatik) --</option>';
+            
+            availableKeys.forEach(key => {
+                const opt = document.createElement('option');
+                opt.value = key;
+                opt.textContent = key;
+                if (key.toLowerCase() === 'regnum' || key.toLowerCase() === 'reg_num') {
+                    opt.selected = true; // Agar regnum bo'lsa avtomatik tanlaydi
+                }
+                select.appendChild(opt);
+            });
         }
 
         function updateMapAndTable() {
             if (!map) return;
 
-            // Eski qatlamlarni tozalash
             googleDataLayers.forEach(layer => layer.setMap(null));
             googleDataLayers = [];
 
@@ -170,7 +198,6 @@
                 const geom = feat.geometry;
                 const props = feat.properties || {};
 
-                // Popup uchun ma'lumot tayyorlash
                 let contentString = `<div style="max-height:150px; overflow-y:auto; font-size:12px;"><b>Xossalar:</b><br>`;
                 for (let key in props) {
                     contentString += `<b>${key}:</b> ${props[key]}<br>`;
@@ -224,9 +251,11 @@
 
         function clearAll() {
             featureCollection = { type: "FeatureCollection", features: [] };
+            availableKeys.clear();
             googleDataLayers.forEach(layer => layer.setMap(null));
             googleDataLayers = [];
             document.getElementById('fileList').innerHTML = '';
+            document.getElementById('nameColumnSelect').innerHTML = '<option value="">-- Standart (Avtomatik) --</option>';
             document.querySelector('#attrTable tbody').innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
         }
 
@@ -263,16 +292,33 @@
 
         function exportKML() {
             if (featureCollection.features.length === 0) {
-                alert("Eksport qilish uchun ma'lumot yo'q!");
+                alert("Eksport qilish uchun ma'lumot yo'qcharts!");
                 return;
             }
+
+            const selectedKey = document.getElementById('nameColumnSelect').value;
+
             let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
+            
             featureCollection.features.forEach((feat, idx) => {
-                kml += `  <Placemark>\n    <name>Obyekt ${idx + 1}</name>\n`;
-                if (feat.geometry && feat.geometry.coordinates) {
-                    const coords = feat.geometry.coordinates;
-                    if (feat.geometry.type === "Point") {
-                        kml += `    <Point><coordinates>${coords[0]},${coords[1]}</coordinates></Point>\n`;
+                let objName = `Obyekt ${idx + 1}`;
+                if (selectedKey && feat.properties && feat.properties[selectedKey] !== undefined) {
+                    objName = feat.properties[selectedKey];
+                }
+
+                kml += `  <Placemark>\n`;
+                kml += `    <name>${objName}</name>\n`;
+
+                if (feat.geometry) {
+                    const geom = feat.geometry;
+                    if (geom.type === "Point" && geom.coordinates) {
+                        kml += `    <Point><coordinates>${geom.coordinates[0]},${geom.coordinates[1]}</coordinates></Point>\n`;
+                    } else if (geom.type === "Polygon" && geom.coordinates) {
+                        kml += `    <Polygon>\n      <outerBoundaryIs>\n        <LinearRing>\n          <coordinates>\n`;
+                        geom.coordinates[0].forEach(coord => {
+                            kml += `            ${coord[0]},${coord[1]},0\n`;
+                        });
+                        kml += `          </coordinates>\n        </LinearRing>\n      </outerBoundaryIs>\n    </Polygon>\n`;
                     }
                 }
                 kml += `  </Placemark>\n`;
@@ -283,7 +329,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'xarita.kml';
+            a.download = 'xarita_tanlangan.kml';
             a.click();
             URL.revokeObjectURL(url);
         }
