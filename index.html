@@ -266,4 +266,44 @@
 
                 const opt2 = document.createElement('option');
                 opt2.value = key; opt2.textContent = key;
-                if (key.toLowerCase() === 'regnum' || key.toLowerCase() === 'reg_
+                if (key.toLowerCase() === 'regnum' || key.toLowerCase() === 'reg_num') opt2.selected = true;
+                searchSelect.appendChild(opt2);
+            });
+        }
+
+        function updateMapAndTable() {
+            if (currentLayer) map.removeLayer(currentLayer);
+            layerMap.clear();
+            highlightedLayer = null;
+
+            try {
+                currentLayer = L.geoJSON(featureCollection, {
+                    style: function (feature) {
+                        return { color: '#3388ff', weight: 3, fillOpacity: 0.2 };
+                    },
+                    onEachFeature: function (feature, layer) {
+                        layerMap.set(feature, layer);
+                        if (feature && feature.properties) {
+                            let featIndex = featureCollection.features.indexOf(feature);
+                            let popupContent = `<div style='max-height:160px; overflow-y:auto;'><b>Xossalar jadvali:</b><table class='popup-table'><tr><th>Maydon</th><th>Qiymat</th></tr>`;
+                            for (let key in feature.properties) {
+                                popupContent += `<tr><td><b>${key}</b></td><td>${feature.properties[key]}</td></tr>`;
+                            }
+                            popupContent += `</table></div>
+                                <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; text-align: center;">
+                                    <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px; color: #333;">Tanlangan obyektni yuklab olish:</div>
+                                    <div style="display: flex; gap: 5px; justify-content: center;">
+                                        <button onclick="downloadSingle(${featIndex}, 'geojson')" style="padding:6px 10px; font-size:11px; background:#0366d6; margin:0; width:auto; border-radius:4px;">GeoJSON</button>
+                                        <button onclick="downloadSingle(${featIndex}, 'kml')" style="padding:6px 10px; font-size:11px; background:#2ea44f; margin:0; width:auto; border-radius:4px;">KML</button>
+                                    </div>
+                                </div>`;
+                            layer.bindPopup(popupContent, { maxWidth: 300 });
+                        }
+                    }
+                }).addTo(map);
+
+                if (featureCollection.features.length > 0) {
+                    map.fitBounds(currentLayer.getBounds());
+                }
+            } catch (e) {
+                console.error("Xaritani chizishda x
