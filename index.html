@@ -104,7 +104,13 @@
 
     <script>
         const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 18, attribution: '© OpenStreetMap' });
-        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 18, attribution: '© Esri' });
+        // Sun'iy yo'ldosh xaritasi (Google Satellite) barqaror ishlashi uchun yangilandi
+        const satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            maxZoom: 21,
+            maxNativeZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: '© Google Satellite'
+        });
 
         const map = L.map('map', { center: [41.2995, 69.2401], zoom: 12, layers: [osmLayer] });
         L.control.layers({ "Standard": osmLayer, "Satellite": satelliteLayer }).addTo(map);
@@ -379,7 +385,6 @@
                 return;
             }
 
-            // Sahifa qotib qolmasligi uchun faqat birinchi 100 ta obyektni jadvalga chiqaramiz (qolganlari xaritada va qidiruvda ishlayveradi)
             const limit = Math.min(featureCollection.features.length, 100);
             for (let i = 0; i < limit; i++) {
                 const feat = featureCollection.features[i];
