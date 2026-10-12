@@ -139,11 +139,18 @@
 
         function checkPassword() {
             const inputVal = document.getElementById('passwordInput').value;
+            const errorMsg = document.getElementById('errorMsg');
+
             if (inputVal === CORRECT_PASSWORD) {
                 document.getElementById('loginOverlay').style.display = 'none';
-                loadSavedData();
+                errorMsg.style.display = 'none';
+                try {
+                    loadSavedData();
+                } catch (err) {
+                    console.error("Ma'lumotlarni yuklashda xatolik:", err);
+                }
             } else {
-                document.getElementById('errorMsg').style.display = 'block';
+                errorMsg.style.display = 'block';
             }
         }
 
@@ -161,6 +168,7 @@
         let currentLayer = null;
         let availableKeys = new Set();
         let layerMap = new Map();
+        let highlightedLayer = null;
 
         function loadSavedData() {
             const saved = localStorage.getItem('savedMapFeatures');
@@ -177,6 +185,7 @@
                     }
                 } catch (e) {
                     console.error("Saqlangan ma'lumotni o'qish xatosi:", e);
+                    localStorage.removeItem('savedMapFeatures');
                 }
             }
         }
@@ -265,9 +274,13 @@
         function updateMapAndTable() {
             if (currentLayer) map.removeLayer(currentLayer);
             layerMap.clear();
+            highlightedLayer = null;
 
             try {
                 currentLayer = L.geoJSON(featureCollection, {
+                    style: function (feature) {
+                        return { color: '#3388ff', weight: 3, fillOpacity: 0.2 };
+                    },
                     onEachFeature: function (feature, layer) {
                         layerMap.set(feature, layer);
                         if (feature && feature.properties) {
@@ -312,6 +325,21 @@
                         const layer = layerMap.get(feat);
                         if (layer) {
                             found = true;
+
+                            // Eski ajratilgan qatlamni odatiy rangga qaytarish
+                            if (highlightedLayer) {
+                                highlightedLayer.setStyle({ color: '#3388ff', weight: 3, fillOpacity: 0.2 });
+                            }
+
+                            // Yangi topilgan qatlamni qizil rangga o'tkazish
+                            highlightedLayer = layer;
+                            layer.setStyle({
+                                color: '#e74c3c',
+                                fillColor: '#e74c3c',
+                                fillOpacity: 0.6,
+                                weight: 5
+                            });
+
                             if (layer.getBounds) {
                                 map.fitBounds(layer.getBounds());
                             } else if (layer.getLatLng) {
@@ -334,6 +362,7 @@
                 featureCollection = { type: "FeatureCollection", features: [] };
                 availableKeys.clear();
                 layerMap.clear();
+                highlightedLayer = null;
                 if (currentLayer) map.removeLayer(currentLayer);
                 document.getElementById('fileList').innerHTML = '';
                 document.getElementById('searchKeySelect').innerHTML = '<option value="">-- Ustunni tanlang --</option>';
@@ -416,7 +445,6 @@
                 let props = feat.properties || {};
                 let row = [index + 1];
 
-                keysArray.keys().forEach(() => {}); // placeholder
                 keysArray.forEach(key => {
                     let val = props[key] !== undefined ? props[key] : "";
                     val = String(val).replace(/"/g, '""');
