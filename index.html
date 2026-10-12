@@ -161,6 +161,7 @@
         let currentLayer = null;
         let availableKeys = new Set();
         let layerMap = new Map();
+        let highlightedLayer = null; // Oldingi qidirilgan obyektni saqlash uchun
 
         function loadSavedData() {
             const saved = localStorage.getItem('savedMapFeatures');
@@ -236,4 +237,80 @@
 
             feats.forEach(f => {
                 if (f.properties) {
-                    Object
+                    Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                }
+                featureCollection.features.push(f);
+            });
+        }
+
+        function updateColumnSelectors() {
+            const nameSelect = document.getElementById('nameColumnSelect');
+            const searchSelect = document.getElementById('searchKeySelect');
+            
+            nameSelect.innerHTML = '<option value="">-- Avtomatik (Obyekt raqami) --</option>';
+            searchSelect.innerHTML = '<option value="">-- Ustunni tanlang --</option>';
+
+            availableKeys.forEach(key => {
+                const opt1 = document.createElement('option');
+                opt1.value = key; opt1.textContent = key;
+                if (key.toLowerCase() === 'regnum' || key.toLowerCase() === 'reg_num') opt1.selected = true;
+                nameSelect.appendChild(opt1);
+
+                const opt2 = document.createElement('option');
+                opt2.value = key; opt2.textContent = key;
+                if (key.toLowerCase() === 'regnum' || key.toLowerCase() === 'reg_num') opt2.selected = true;
+                searchSelect.appendChild(opt2);
+            });
+        }
+
+        function updateMapAndTable() {
+            if (currentLayer) map.removeLayer(currentLayer);
+            layerMap.clear();
+            highlightedLayer = null;
+
+            try {
+                currentLayer = L.geoJSON(featureCollection, {
+                    style: function (feature) {
+                        return { color: '#3388ff', weight: 3, fillOpacity: 0.2 };
+                    },
+                    onEachFeature: function (feature, layer) {
+                        layerMap.set(feature, layer);
+                        if (feature && feature.properties) {
+                            let popupContent = "<div style='max-height:180px; overflow-y:auto;'><b>Xossalar jadvali:</b><table class='popup-table'><tr><th>Maydon</th><th>Qiymat</th></tr>";
+                            for (let key in feature.properties) {
+                                popupContent += `<tr><td><b>${key}</b></td><td>${feature.properties[key]}</td></tr>`;
+                            }
+                            popupContent += "</table></div>";
+                            layer.bindPopup(popupContent);
+                        }
+                    }
+                }).addTo(map);
+
+                if (featureCollection.features.length > 0) {
+                    map.fitBounds(currentLayer.getBounds());
+                }
+            } catch (e) {
+                console.error("Xaritani chizishda xatolik:", e);
+            }
+
+            updateTable();
+        }
+
+        function searchFeature() {
+            const searchKey = document.getElementById('searchKeySelect').value;
+            const searchValue = document.getElementById('searchInput').value.trim().toLowerCase();
+
+            if (!searchKey) {
+                alert("Iltimos, qaysi ustun bo'yicha qidirishni tanlang!");
+                return;
+            }
+            if (!searchValue) {
+                alert("Iltimos, qidirilayotgan qiymatni kiriting!");
+                return;
+            }
+
+            let found = false;
+            featureCollection.features.forEach(feat => {
+                if (feat.properties && feat.properties[searchKey] !== undefined) {
+                    let val = String(feat.properties[searchKey]).toLowerCase();
+                    if
