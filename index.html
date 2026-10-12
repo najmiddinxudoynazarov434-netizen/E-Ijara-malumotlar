@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xarita Boshqaruvi va Qidiruv</title>
+    <title>Xarita Paneli va Qidiruv</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
@@ -139,11 +139,21 @@
 
         function checkPassword() {
             const inputVal = document.getElementById('passwordInput').value;
+            const errorMsg = document.getElementById('errorMsg');
+
             if (inputVal === CORRECT_PASSWORD) {
+                // Parol to'g'ri bo'lsa oynani darhol yopamiz
                 document.getElementById('loginOverlay').style.display = 'none';
-                loadSavedData();
+                errorMsg.style.display = 'none';
+                
+                // Ma'lumotlarni xavfsiz yuklaymiz
+                try {
+                    loadSavedData();
+                } catch (err) {
+                    console.error("Ma'lumotlarni yuklashda xatolik:", err);
+                }
             } else {
-                document.getElementById('errorMsg').style.display = 'block';
+                errorMsg.style.display = 'block';
             }
         }
 
@@ -178,6 +188,7 @@
                     }
                 } catch (e) {
                     console.error("Saqlangan ma'lumotni o'qish xatosi:", e);
+                    localStorage.removeItem('savedMapFeatures');
                 }
             }
         }
@@ -252,4 +263,147 @@
 
             availableKeys.forEach(key => {
                 const opt1 = document.createElement('option');
-                opt1.value = key;
+                opt1.value = key; opt1.textContent = key;
+                if (key.toLowerCase() === 'regnum' || key.toLowerCase() === 'reg_num') opt1.selected = true;
+                nameSelect.appendChild(opt1);
+
+                const opt2 = document.createElement('option');
+                opt2.value = key; opt2.textContent = key;
+                if (key.toLowerCase() === 'regnum' || key.toLowerCase() === 'reg_num') opt2.selected = true;
+                searchSelect.appendChild(opt2);
+            });
+        }
+
+        function updateMapAndTable() {
+            if (currentLayer) map.removeLayer(currentLayer);
+            layerMap.clear();
+            highlightedLayer = null;
+
+            try {
+                currentLayer = L.geoJSON(featureCollection, {
+                    style: function (feature) {
+                        return { color: '#3388ff', weight: 3, fillOpacity: 0.2 };
+                    },
+                    onEachFeature: function (feature, layer) {
+                        layerMap.set(feature, layer);
+                        if (feature && feature.properties) {
+                            let popupContent = "<div style='max-height:180px; overflow-y:auto;'><b>Xossalar jadvali:</b><table class='popup-table'><tr><th>Maydon</th><th>Qiymat</th></tr>";
+                            for (let key in feature.properties) {
+                                popupContent += `<tr><td><b>${key}</b></td><td>${feature.properties[key]}</td></tr>`;
+                            }
+                            popupContent += "</table></div>";
+                            layer.bindPopup(popupContent);
+                        }
+                    }
+                }).addTo(map);
+
+                if (featureCollection.features.length > 0) {
+                    map.fitBounds(currentLayer.getBounds());
+                }
+            } catch (e) {
+                console.error("Xaritani chizishda xatolik:", e);
+            }
+
+            updateTable();
+        }
+
+        function searchFeature() {
+            const searchKey = document.getElementById('searchKeySelect').value;
+            const searchValue = document.getElementById('searchInput').value.trim().toLowerCase();
+
+            if (!searchKey) {
+                alert("Iltimos, qaysi ustun bo'yicha qidirishni tanlang!");
+                return;
+            }
+            if (!searchValue) {
+                alert("Iltimos, qidirilayotgan qiymatni kiriting!");
+                return;
+            }
+
+            let found = false;
+            featureCollection.features.forEach(feat => {
+                if (feat.properties && feat.properties[searchKey] !== undefined) {
+                    let val = String(feat.properties[searchKey]).toLowerCase();
+                    if (val.includes(searchValue)) {
+                        const layer = layerMap.get(feat);
+                        if (layer) {
+                            found = true;
+
+                            if (highlightedLayer) {
+                                highlightedLayer.setStyle({ color: '#3388ff', weight: 3, fillOpacity: 0.2 });
+                            }
+
+                            highlightedLayer = layer;
+                            layer.setStyle({
+                                color: '#e74c3c',
+                                fillColor: '#e74c3c',
+                                fillOpacity: 0.6,
+                                weight: 5
+                            });
+
+                            if (layer.getBounds) {
+                                map.fitBounds(layer.getBounds());
+                            } else if (layer.getLatLng) {
+                                map.setView(layer.getLatLng(), 16);
+                            }
+                            layer.openPopup();
+                        }
+                    }
+                }
+            });
+
+            if (!found) {
+                alert("Bunday qiymatga ega obyekt topilmadi!");
+            }
+        }
+
+        function clearAllData() {
+            if (confirm("Barcha saqlangan ma'lumotlarni o'chirib tashlamoqchimisiz?")) {
+                localStorage.removeItem('savedMapFeatures');
+                featureCollection = { type: "FeatureCollection", features: [] };
+                availableKeys.clear();
+                layerMap.clear();
+                highlightedLayer = null;
+                if (currentLayer) map.removeLayer(currentLayer);
+                document.getElementById('fileList').innerHTML = '';
+                document.getElementById('searchKeySelect').innerHTML = '<option value="">-- Ustunni tanlang --</option>';
+                document.getElementById('nameColumnSelect').innerHTML = '<option value="">-- Avtomatik (Obyekt raqami) --</option>';
+                document.querySelector('#attrTable tbody').innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
+            }
+        }
+
+        function updateTable() {
+            const tbody = document.querySelector('#attrTable tbody');
+            tbody.innerHTML = '';
+            if (featureCollection.features.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
+                return;
+            }
+
+            featureCollection.features.forEach((feat, index) => {
+                const tr = document.createElement('tr');
+                let props = feat.properties || {};
+                let subTable = "<table class='popup-table'><tr><th>Maydon</th><th>Qiymat</th></tr>";
+                for (let k in props) {
+                    subTable += `<tr><td><b>${k}</b></td><td>${props[k]}</td></tr>`;
+                }
+                subTable += "</table>";
+                tr.innerHTML = `<td>${index + 1}</td><td>${subTable}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function exportGeoJSON() {
+            if (featureCollection.features.length === 0) { alert("Eksport uchun ma'lumot yo'q!"); return; }
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(featureCollection));
+            const a = document.createElement('a');
+            a.href = dataStr; a.download = "birlashgan_xarita.geojson";
+            document.body.appendChild(a); a.click(); a.remove();
+        }
+
+        function exportKML() {
+            if (featureCollection.features.length === 0) { alert("Eksport uchun ma'lumot yo'q!"); return; }
+            const selectedKey = document.getElementById('nameColumnSelect').value;
+            let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
+            
+            featureCollection.features.forEach((feat,
