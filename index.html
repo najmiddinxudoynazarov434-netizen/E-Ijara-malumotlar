@@ -115,32 +115,29 @@
         let layerMap = new Map();
         let highlightedLayer = null;
 
+        // MASTER MA'LUMOTLAR (To'g'ridan-to'g'ri kod ichida turadi, hech qanday xatolik bermaydi)
+        const masterData = {
+            "type": "FeatureCollection",
+            "features": [
+                // FAYLINGIZDAGI MA'LUMOTLARNI SHU YERGA QO'YASIZ (agar hali ma'lumot bo'lmasa qavslar bo'sh turaveradi)
+            ]
+        };
+
         window.addEventListener('DOMContentLoaded', () => {
-            loadRepositoryData();
+            loadMasterData();
         });
 
-        async function loadRepositoryData() {
-            try {
-                // Keshni aylanib o'tish uchun vaqt belgisi qo'shiladi (?v=...)
-                const cacheBuster = new Date().getTime();
-                const response = await fetch(`./data.geojson?v=${cacheBuster}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data && Array.isArray(data.features) && data.features.length > 0) {
-                        featureCollection = data;
-                        featureCollection.features.forEach(f => {
-                            if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                        });
-                        updateMapAndTable();
-                        updateColumnSelectors();
-                        return;
-                    }
-                }
-            } catch (err) {
-                console.log("Repozitoriya faylida xatolik:", err);
+        function loadMasterData() {
+            if (masterData && masterData.features && masterData.features.length > 0) {
+                featureCollection = masterData;
+                featureCollection.features.forEach(f => {
+                    if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                });
+                updateMapAndTable();
+                updateColumnSelectors();
+            } else {
+                loadSavedData();
             }
-
-            loadSavedData();
         }
 
         function loadSavedData() {
