@@ -103,22 +103,12 @@
 
         const map = L.map('map', { center: [41.2995, 69.2401], zoom: 12, layers: [osmLayer] });
 
-        // Qatlamlar guruhlari (Layer Groups)
         const winnerGroup = L.layerGroup().addTo(map);
         const saleGroup = L.layerGroup().addTo(map);
 
-        // Xarita boshqaruv paneli (O'ng yuqori burchakda qatlamlarni yoqib-o'chirish uchun)
-        const baseMaps = {
-            "Standard": osmLayer,
-            "Satellite": satelliteLayer
-        };
-        
-        const overlayMaps = {
-            "🏆 G'olibi aniqlangan": winnerGroup,
-            "🛒 Savdoda": saleGroup
-        };
-
-        const layerControl = L.control.layers(baseMaps, overlayMaps, { collapsed: false }).addTo(map);
+        const baseMaps = { "Standard": osmLayer, "Satellite": satelliteLayer };
+        const overlayMaps = { "🏆 G'olibi aniqlangan": winnerGroup, "🛒 Savdoda": saleGroup };
+        L.control.layers(baseMaps, overlayMaps, { collapsed: false }).addTo(map);
 
         L.control.measure({
             position: 'topleft',
@@ -143,81 +133,109 @@
         async function loadData() {
             let loaded = false;
 
-            // 1. Tanlovi g'olibi aniqlangan qatlamini yuklash (Ko'k rangda)
-            try {
-                const res1 = await fetch(encodeURIComponent("tanlovi g'olibi aniqlangan.geojson") + '?t=' + new Date().getTime());
-                if (res1.ok) {
-                    const data1 = await res1.json();
-                    if (data1 && Array.isArray(data1.features)) {
-                        data1.features.forEach(f => {
-                            f._layerType = 'winner';
-                            if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                            featureCollection.features.push(f);
-                        });
-                        addFeaturesToGroup(data1, winnerGroup, 'winner', '#3388ff');
-                        loaded = true;
-                    }
-                }
-            } catch (e) {
-                console.log("Goliblar faylini o'qishda xatolik:", e);
-            }
-
-            // 2. Savdoda qatlamini yuklash (Qizil rangda)
-            try {
-                const res2 = await fetch(encodeURIComponent("Savdoda.geojson") + '?t=' + new Date().getTime());
-                if (res2.ok) {
-                    const data2 = await res2.json();
-                    if (data2 && Array.isArray(data2.features)) {
-                        data2.features.forEach(f => {
-                            f._layerType = 'sale';
-                            if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                            featureCollection.features.push(f);
-                        });
-                        addFeaturesToGroup(data2, saleGroup, 'sale', '#e74c3c');
-                        loaded = true;
-                    }
-                }
-            } catch (e) {
-                console.log("Savdoda faylini o'qishda xatolik:", e);
-            }
-
-            if (featureCollection.features.length > 0) {
-                updateColumnSelectors();
+            // Avval LocalStorage'dan tekshiramiz (agar foydalanuvchi qatlamni o'zgartirgan bo'lsa)
+            const savedState = localStorage.getItem('customMapFeatures');
+            if (savedState) {
                 try {
-                    let bounds = L.featureGroup([winnerGroup, saleGroup]).getBounds();
-                    if (bounds.isValid()) map.fitBounds(bounds);
-                } catch(err) {}
+                    const parsed = JSON.parse(savedState);
+                    if (parsed && Array.isArray(parsed.features) && parsed.features.length > 0) {
+                        featureCollection = parsed;
+                        renderAllFeatures();
+                        loaded = true;
+                    }
+                } catch (e) {
+                    console.error("LocalStorage xatoligi:", e);
+                }
+            }
+
+            if (!loaded) {
+                try {
+                    const res1 = await fetch(encodeURIComponent("tanlovi g'olibi aniqlangan.geojson") + '?t=' + new Date().getTime());
+                    if (res1.ok) {
+                        const data1 = await res1.json();
+                        if (data1 && Array.isArray(data1.features)) {
+                            data1.features.forEach(f => {
+                                f._layerType = 'winner';
+                                if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                                featureCollection.features.push(f);
+                            });
+                        }
+                    }
+                } catch (e) { console.log("Goliblar fayli topilmadi"); }
+
+                try {
+                    const res2 = await fetch(encodeURIComponent("Savdoda.geojson") + '?t=' + new Date().getTime());
+                    if (res2.ok) {
+                        const data2 = await res2.json();
+                        if (data2 && Array.isArray(data2.features)) {
+                            data2.features.forEach(f => {
+                                f._layerType = 'sale';
+                                if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                                featureCollection.features.push(f);
+                            });
+                        }
+                    }
+                } catch (e) { console.log("Savdoda fayli topilmadi"); }
+
+                if (featureCollection.features.length > 0) {
+                    renderAllFeatures();
+                }
             }
         }
 
-        function addFeaturesToGroup(geoJsonData, group, type, color) {
-            const geoJsonLayer = L.geoJSON(geoJsonData, {
-                style: function (feature) {
-                    return { color: color, weight: 3, fillOpacity: 0.25, fillColor: color };
-                },
-                onEachFeature: function (feature, layer) {
-                    layerMap.set(feature, layer);
-                    if (feature && feature.properties) {
-                        let featIndex = featureCollection.features.indexOf(feature);
-                        let statusText = type === 'sale' ? '<b style="color:#e74c3c;">Holati: Savdoda</b>' : '<b style="color:#3388ff;">Holati: Gʻolib aniqlangan</b>';
-                        
-                        let popupContent = `<div style='max-height:160px; overflow-y:auto;'>${statusText}<table class='popup-table' style='margin-top:6px;'><tr><th>Maydon</th><th>Qiymat</th></tr>`;
-                        for (let key in feature.properties) {
-                            popupContent += `<tr><td><b>${key}</b></td><td>${feature.properties[key]}</td></tr>`;
+        function renderAllFeatures() {
+            winnerGroup.clearLayers();
+            saleGroup.clearLayers();
+            layerMap.clear();
+
+            featureCollection.features.forEach((feat, index) => {
+                let color = feat._layerType === 'sale' ? '#f39c12' : '#3388ff';
+                let targetGroup = feat._layerType === 'sale' ? saleGroup : winnerGroup;
+
+                const geoJsonLayer = L.geoJSON(feat, {
+                    style: { color: color, weight: 3, fillOpacity: feat._layerType === 'sale' ? 0.35 : 0.25, fillColor: color },
+                    onEachFeature: function (feature, layer) {
+                        layerMap.set(feature, layer);
+                        if (feature && feature.properties) {
+                            let statusText = feat._layerType === 'sale' ? '<b style="color:#f39c12;">Holati: Savdoda</b>' : '<b style="color:#3388ff;">Holati: Gʻolib aniqlangan</b>';
+                            let switchBtnText = feat._layerType === 'sale' ? "🏆 G'olibga o'tkazish" : "🛒 Savdoga o'tkazish";
+                            let switchTarget = feat._layerType === 'sale' ? 'winner' : 'sale';
+
+                            let popupContent = `<div style='max-height:160px; overflow-y:auto;'>${statusText}<table class='popup-table' style='margin-top:6px;'><tr><th>Maydon</th><th>Qiymat</th></tr>`;
+                            for (let key in feature.properties) {
+                                popupContent += `<tr><td><b>${key}</b></td><td>${feature.properties[key]}</td></tr>`;
+                            }
+                            popupContent += `</table></div>
+                                <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; text-align: center;">
+                                    <button onclick="switchLayer(${index}, '${switchTarget}')" style="padding:6px 10px; font-size:11px; background:#e67e22; margin-bottom:5px; width:100%; border-radius:4px;">${switchBtnText}</button>
+                                    <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px; color: #333;">Yuklab olish:</div>
+                                    <div style="display: flex; gap: 5px; justify-content: center;">
+                                        <button onclick="downloadSingle(${index}, 'geojson')" style="padding:6px 10px; font-size:11px; background:#0366d6; margin:0; width:auto; border-radius:4px;">GeoJSON</button>
+                                        <button onclick="downloadSingle(${index}, 'kml')" style="padding:6px 10px; font-size:11px; background:#2ea44f; margin:0; width:auto; border-radius:4px;">KML</button>
+                                    </div>
+                                </div>`;
+                            layer.bindPopup(popupContent, { maxWidth: 300 });
                         }
-                        popupContent += `</table></div>
-                            <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; text-align: center;">
-                                <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px; color: #333;">Tanlangan obyektni yuklab olish:</div>
-                                <div style="display: flex; gap: 5px; justify-content: center;">
-                                    <button onclick="downloadSingle(${featIndex}, 'geojson')" style="padding:6px 10px; font-size:11px; background:#0366d6; margin:0; width:auto; border-radius:4px;">GeoJSON</button>
-                                    <button onclick="downloadSingle(${featIndex}, 'kml')" style="padding:6px 10px; font-size:11px; background:#2ea44f; margin:0; width:auto; border-radius:4px;">KML</button>
-                                </div>
-                            </div>`;
-                        layer.bindPopup(popupContent, { maxWidth: 300 });
                     }
-                }
+                });
+                targetGroup.addLayer(geoJsonLayer);
             });
-            group.addLayer(geoJsonLayer);
+
+            updateColumnSelectors();
+            try {
+                let bounds = L.featureGroup([winnerGroup, saleGroup]).getBounds();
+                if (bounds.isValid()) map.fitBounds(bounds);
+            } catch(err) {}
+        }
+
+        // Qatlamni boshqasiga o'tkazish funksiyasi
+        function switchLayer(index, newType) {
+            if (featureCollection.features[index]) {
+                featureCollection.features[index]._layerType = newType;
+                localStorage.setItem('customMapFeatures', JSON.stringify(featureCollection));
+                renderAllFeatures();
+                alert("Obyekt muvaffaqiyatli ko'chirildi!");
+            }
         }
 
         document.getElementById('fileInput').addEventListener('change', async function(e) {
@@ -248,37 +266,21 @@
                     }
 
                     if (parsedData) {
-                        addParsedDataAndDisplay(parsedData, 'winner', '#3388ff');
+                        let feats = parsedData.type === "FeatureCollection" ? parsedData.features : [parsedData];
+                        feats.forEach(f => {
+                            f._layerType = 'winner';
+                            if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                            featureCollection.features.push(f);
+                        });
                     }
                 } catch (err) {
                     console.error("Xatolik:", err);
                     alert(`"${file.name}" faylini o'qishda xatolik!`);
                 }
             }
-            updateColumnSelectors();
+            localStorage.setItem('customMapFeatures', JSON.stringify(featureCollection));
+            renderAllFeatures();
         });
-
-        function addParsedDataAndDisplay(json, type, color) {
-            if (!json) return;
-            let feats = [];
-            if (json.type === "FeatureCollection" && Array.isArray(json.features)) {
-                feats = json.features;
-            } else if (json.type === "Feature") {
-                feats = [json];
-            } else if (Array.isArray(json)) {
-                feats = json;
-            } else if (json.geometry) {
-                feats = [{ type: "Feature", geometry: json.geometry, properties: json.properties || {} }];
-            }
-
-            feats.forEach(f => {
-                f._layerType = type;
-                if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                featureCollection.features.push(f);
-            });
-
-            addFeaturesToGroup(json, winnerGroup, type, color);
-        }
 
         function updateColumnSelectors() {
             const nameSelect = document.getElementById('nameColumnSelect');
@@ -306,9 +308,7 @@
 
         map.on('locationfound', function(e) {
             const radius = e.accuracy / 2;
-            if (userMarker) {
-                map.removeLayer(userMarker);
-            }
+            if (userMarker) map.removeLayer(userMarker);
             userMarker = L.marker(e.latlng).addTo(map)
                 .bindPopup(`Siz shu yerdasiz (Aniqlik: ${Math.round(radius)} metr)`).openPopup();
         });
@@ -331,10 +331,7 @@
             } 
             else if (format === 'kml') {
                 let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
-                kml += `  <Style id="redOutline">\n`;
-                kml += `    <LineStyle><color>ff0000ff</color><width>3</width></LineStyle>\n`;
-                kml += `    <PolyStyle><fill>0</fill></PolyStyle>\n`;
-                kml += `  </Style>\n`;
+                kml += `  <Style id="redOutline">\n    <LineStyle><color>ff0000ff</color><width>3</width></LineStyle>\n    <PolyStyle><fill>0</fill></PolyStyle>\n  </Style>\n`;
 
                 let objName = `Obyekt ${index + 1}`;
                 kml += `  <Placemark>\n    <name>${objName}</name>\n    <styleUrl>#redOutline</styleUrl>\n`;
@@ -374,8 +371,9 @@
                         if (layer) {
                             found = true;
                             if (highlightedLayer) {
-                                let origColor = highlightedLayer.feature && highlightedLayer.feature._layerType === 'sale' ? '#e74c3c' : '#3388ff';
-                                highlightedLayer.setStyle({ color: origColor, fillColor: origColor, weight: 3, fillOpacity: 0.25 });
+                                let origColor = highlightedLayer.feature && highlightedLayer.feature._layerType === 'sale' ? '#f39c12' : '#3388ff';
+                                let origOpacity = highlightedLayer.feature && highlightedLayer.feature._layerType === 'sale' ? 0.35 : 0.25;
+                                highlightedLayer.setStyle({ color: origColor, fillColor: origColor, weight: 3, fillOpacity: origOpacity });
                             }
                             highlightedLayer = layer;
                             layer.setStyle({ color: '#27ae60', fillColor: '#27ae60', fillOpacity: 0.7, weight: 5 });
@@ -407,10 +405,7 @@
             const selectedKey = document.getElementById('nameColumnSelect').value;
             
             let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
-            kml += `  <Style id="redOutline">\n`;
-            kml += `    <LineStyle><color>ff0000ff</color><width>3</width></LineStyle>\n`;
-            kml += `    <PolyStyle><fill>0</fill></PolyStyle>\n`;
-            kml += `  </Style>\n`;
+            kml += `  <Style id="redOutline">\n    <LineStyle><color>ff0000ff</color><width>3</width></LineStyle>\n    <PolyStyle><fill>0</fill></PolyStyle>\n  </Style>\n`;
             
             featureCollection.features.forEach((feat, idx) => {
                 let objName = `Obyekt ${idx + 1}`;
