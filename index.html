@@ -22,8 +22,6 @@
         button:hover { background: #2c974b; }
         .btn-secondary { background: #0366d6; }
         .btn-secondary:hover { background: #005cc5; }
-        .btn-danger { background: #d73a49; }
-        .btn-danger:hover { background: #cb2431; }
         .btn-warning { background: #e67e22; color: white; }
         .btn-warning:hover { background: #d35400; }
         
@@ -71,11 +69,6 @@
         </div>
 
         <div class="section">
-            <label>Boshqarish:</label>
-            <button class="btn-danger" onclick="clearAllData()">Barcha ma'lumotlarni tozalash</button>
-        </div>
-
-        <div class="section">
             <label>Eksport qilish va Konvertatsiya:</label>
             <button class="btn-secondary" onclick="exportGeoJSON()">GeoJSON formatida saqlash</button>
             
@@ -111,7 +104,6 @@
         const map = L.map('map', { center: [41.2995, 69.2401], zoom: 12, layers: [osmLayer] });
         L.control.layers({ "Standard": osmLayer, "Satellite": satelliteLayer }).addTo(map);
 
-        // Masofa va maydonni o'lchash vositasini qo'shish
         L.control.measure({
             position: 'topleft',
             primaryLengthUnit: 'meters',
@@ -292,7 +284,6 @@
             }
         }
 
-        // Geolokatsiya funksiyasi
         function locateUser() {
             map.locate({ setView: true, maxZoom: 16 });
         }
@@ -386,20 +377,6 @@
             if (!found) alert("Bunday qiymatga ega obyekt topilmadi!");
         }
 
-        function clearAllData() {
-            if (confirm("Barcha saqlangan ma'lumotlarni o'chirib tashlamoqchimisiz?")) {
-                localStorage.removeItem('savedMapFeatures');
-                featureCollection = { type: "FeatureCollection", features: [] };
-                availableKeys.clear();
-                layerMap.clear();
-                highlightedLayer = null;
-                if (currentLayer) map.removeLayer(currentLayer);
-                document.getElementById('fileList').innerHTML = '';
-                document.getElementById('searchKeySelect').innerHTML = '<option value="">-- Ustunni tanlang --</option>';
-                document.getElementById('nameColumnSelect').innerHTML = '<option value="">-- Avtomatik (Obyekt raqami) --</option>';
-            }
-        }
-
         function exportGeoJSON() {
             if (featureCollection.features.length === 0) { alert("Eksport uchun ma'lumot yo'q!"); return; }
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(featureCollection));
@@ -412,63 +389,4 @@
             if (featureCollection.features.length === 0) { alert("Eksport uchun ma'lumot yo'q!"); return; }
             const selectedKey = document.getElementById('nameColumnSelect').value;
             
-            let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
-            kml += `  <Style id="redOutline">\n`;
-            kml += `    <LineStyle><color>ff0000ff</color><width>3</width></LineStyle>\n`;
-            kml += `    <PolyStyle><fill>0</fill></PolyStyle>\n`;
-            kml += `  </Style>\n`;
-            
-            featureCollection.features.forEach((feat, idx) => {
-                let objName = `Obyekt ${idx + 1}`;
-                if (selectedKey && feat.properties && feat.properties[selectedKey] !== undefined) {
-                    objName = feat.properties[selectedKey];
-                }
-                kml += `  <Placemark>\n    <name>${objName}</name>\n    <styleUrl>#redOutline</styleUrl>\n`;
-                if (feat.geometry && feat.geometry.coordinates) {
-                    const geom = feat.geometry;
-                    if (geom.type === "Polygon") {
-                        kml += `    <Polygon>\n      <outerBoundaryIs>\n        <LinearRing>\n          <coordinates>\n`;
-                        geom.coordinates[0].forEach(c => { kml += `            ${c[0]},${c[1]},0\n`; });
-                        kml += `          </coordinates>\n        </LinearRing>\n      </outerBoundaryIs>\n    </Polygon>\n`;
-                    }
-                }
-                kml += `  </Placemark>\n`;
-            });
-            kml += `</Document>\n</kml>`;
-
-            const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'xarita_tanlangan.kml';
-            a.click(); URL.revokeObjectURL(url);
-        }
-
-        function exportCSV() {
-            if (featureCollection.features.length === 0) { alert("Eksport uchun ma'lumot yo'q!"); return; }
-            const keysArray = Array.from(availableKeys);
-            let headers = ["Index", ...keysArray];
-            let csvRows = [headers.join(",")];
-
-            featureCollection.features.forEach((feat, index) => {
-                let props = feat.properties || {};
-                let row = [index + 1];
-                keysArray.forEach(key => {
-                    let val = props[key] !== undefined ? props[key] : "";
-                    val = String(val).replace(/"/g, '""');
-                    row.push(`"${val}"`);
-                });
-                csvRows.push(row.join(","));
-            });
-
-            const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + csvRows.join("\n");
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement('a');
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", "atributlar_jadval.csv");
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-        }
-    </script>
-</body>
-</html>
+            let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<k
