@@ -3,14 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xarita Paneli va Qidiruv</title>
+    <title>Xarita Paneli va O'lchash</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet Measure CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-measure@3.1.0/dist/leaflet.css" />
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
         body { display: flex; height: 100vh; overflow: hidden; background: #f0f2f5; }
 
-        #sidebar { width: 420px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
+        #sidebar { width: 380px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
         #map { flex-grow: 1; height: 100%; }
         h2 { font-size: 20px; margin-bottom: 20px; color: #1a73e8; display: flex; align-items: center; gap: 8px; }
         .section { margin-bottom: 18px; background: #f8f9fa; padding: 14px; border-radius: 8px; border: 1px solid #e1e4e8; }
@@ -22,14 +24,11 @@
         .btn-secondary:hover { background: #005cc5; }
         .btn-danger { background: #d73a49; }
         .btn-danger:hover { background: #cb2431; }
+        .btn-warning { background: #e67e22; color: white; }
+        .btn-warning:hover { background: #d35400; }
         
         ul { list-style: none; margin-top: 8px; max-height: 100px; overflow-y: auto; font-size: 12px; }
         li { padding: 5px 8px; background: white; margin-bottom: 4px; border-radius: 4px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
-        
-        table { width: 100%; font-size: 11px; border-collapse: collapse; margin-top: 8px; background: white; }
-        th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
-        th { background: #f1f8ff; color: #333; }
-        .table-container { max-height: 160px; overflow-y: auto; margin-top: 5px; border-radius: 6px; border: 1px solid #ddd; }
         
         .popup-table { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 5px; }
         .popup-table th, .popup-table td { border: 1px solid #ccc; padding: 4px 6px; }
@@ -38,8 +37,8 @@
 
         @media(max-width: 768px) {
             body { flex-direction: column; }
-            #sidebar { width: 100%; height: 55vh; }
-            #map { height: 45vh; }
+            #sidebar { width: 100%; height: 50vh; }
+            #map { height: 50vh; }
         }
     </style>
 </head>
@@ -53,6 +52,12 @@
             <input type="file" id="fileInput" accept=".geojson,.json,.kml,.zip" multiple>
             <div class="hint">Poligonga bosib uni alohida yuklab olishingiz mumkin.</div>
             <ul id="fileList"></ul>
+        </div>
+
+        <!-- Geolokatsiya bloki -->
+        <div class="section">
+            <label>Mening joylashuvim:</label>
+            <button class="btn-warning" onclick="locateUser()">📍 Geolokatsiyani aniqlash</button>
         </div>
 
         <!-- Qidirish bloki -->
@@ -83,16 +88,6 @@
             <button class="btn-secondary" onclick="exportKML()">KML formatiga o'tkazish</button>
             <button class="btn-secondary" onclick="exportCSV()" style="margin-top: 8px;">Excel (CSV) formatiga olish</button>
         </div>
-
-        <div class="section">
-            <label>Atributlar Jadvali:</label>
-            <div class="table-container">
-                <table id="attrTable">
-                    <thead><tr><th>№</th><th>Asosiy ma'lumotlar</th></tr></thead>
-                    <tbody><tr><td colspan="2" style="text-align:center; color:#777;">Ma'lumot yo'q</td></tr></tbody>
-                </table>
-            </div>
-        </div>
     </div>
 
     <div id="map"></div>
@@ -101,10 +96,11 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
     <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
+    <!-- Leaflet Measure JS -->
+    <script src="https://unpkg.com/leaflet-measure@3.1.0/dist/leaflet-measure.js"></script>
 
     <script>
         const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 18, attribution: '© OpenStreetMap' });
-        // Sun'iy yo'ldosh xaritasi (Google Satellite) barqaror ishlashi uchun yangilandi
         const satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
             maxZoom: 21,
             maxNativeZoom: 20,
@@ -115,11 +111,23 @@
         const map = L.map('map', { center: [41.2995, 69.2401], zoom: 12, layers: [osmLayer] });
         L.control.layers({ "Standard": osmLayer, "Satellite": satelliteLayer }).addTo(map);
 
+        // Masofa va maydonni o'lchash vositasini qo'shish
+        L.control.measure({
+            position: 'topleft',
+            primaryLengthUnit: 'meters',
+            secondaryLengthUnit: 'kilometers',
+            primaryAreaUnit: 'sqmeters',
+            secondaryAreaUnit: 'hectares',
+            activeColor: '#e74c3c',
+            completedColor: '#2980b9'
+        }).addTo(map);
+
         let featureCollection = { type: "FeatureCollection", features: [] };
         let currentLayer = null;
         let availableKeys = new Set();
         let layerMap = new Map();
         let highlightedLayer = null;
+        let userMarker = null;
 
         window.addEventListener('DOMContentLoaded', async () => {
             await loadData();
@@ -159,7 +167,7 @@
                 featureCollection.features.forEach(f => {
                     if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
                 });
-                updateMapAndTable();
+                updateMap();
                 updateColumnSelectors();
             }
         }
@@ -200,7 +208,7 @@
             }
 
             localStorage.setItem('savedMapFeatures', JSON.stringify(featureCollection));
-            updateMapAndTable();
+            updateMap();
             updateColumnSelectors();
         });
 
@@ -245,7 +253,7 @@
             });
         }
 
-        function updateMapAndTable() {
+        function updateMap() {
             if (currentLayer) map.removeLayer(currentLayer);
             layerMap.clear();
             highlightedLayer = null;
@@ -282,9 +290,25 @@
             } catch (e) {
                 console.error("Xaritani chizishda xatolik:", e);
             }
-
-            updateTable();
         }
+
+        // Geolokatsiya funksiyasi
+        function locateUser() {
+            map.locate({ setView: true, maxZoom: 16 });
+        }
+
+        map.on('locationfound', function(e) {
+            const radius = e.accuracy / 2;
+            if (userMarker) {
+                map.removeLayer(userMarker);
+            }
+            userMarker = L.marker(e.latlng).addTo(map)
+                .bindPopup(`Siz shu yerdasiz (Aniqlik: ${Math.round(radius)} metr)`).openPopup();
+        });
+
+        map.on('locationerror', function(e) {
+            alert("Geolokatsiyani aniqlab bo'lmadi: " + e.message);
+        });
 
         function downloadSingle(index, format) {
             const feat = featureCollection.features[index];
@@ -373,33 +397,6 @@
                 document.getElementById('fileList').innerHTML = '';
                 document.getElementById('searchKeySelect').innerHTML = '<option value="">-- Ustunni tanlang --</option>';
                 document.getElementById('nameColumnSelect').innerHTML = '<option value="">-- Avtomatik (Obyekt raqami) --</option>';
-                document.querySelector('#attrTable tbody').innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
-            }
-        }
-
-        function updateTable() {
-            const tbody = document.querySelector('#attrTable tbody');
-            tbody.innerHTML = '';
-            if (featureCollection.features.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
-                return;
-            }
-
-            const limit = Math.min(featureCollection.features.length, 100);
-            for (let i = 0; i < limit; i++) {
-                const feat = featureCollection.features[i];
-                const tr = document.createElement('tr');
-                let props = feat.properties || {};
-                let summaryText = "";
-                let count = 0;
-                for (let k in props) {
-                    if (count < 2) {
-                        summaryText += `${k}: ${props[k]} | `;
-                    }
-                    count++;
-                }
-                tr.innerHTML = `<td>${i + 1}</td><td style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">${summaryText}</td>`;
-                tbody.appendChild(tr);
             }
         }
 
