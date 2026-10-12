@@ -127,24 +127,41 @@
 
         async function loadData() {
             let loaded = false;
-            const filesToFetch = [
-                "tanlovi g'olibi aniqlangan.geojson",
-                "Savdoda.geojson"
-            ];
 
-            for (let fileName of filesToFetch) {
-                try {
-                    const response = await fetch(encodeURIComponent(fileName) + '?t=' + new Date().getTime());
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data && Array.isArray(data.features) && data.features.length > 0) {
-                            addParsedData(data);
-                            loaded = true;
-                        }
+            // 1. Tanlovi g'olibi aniqlangan qatlamini yuklash (Ko'k rangda bo'ladi)
+            try {
+                const res1 = await fetch(encodeURIComponent("tanlovi g'olibi aniqlangan.geojson") + '?t=' + new Date().getTime());
+                if (res1.ok) {
+                    const data1 = await res1.json();
+                    if (data1 && Array.isArray(data1.features)) {
+                        data1.features.forEach(f => {
+                            f._layerType = 'winner'; // Turi: Golib
+                            if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                            featureCollection.features.push(f);
+                        });
+                        loaded = true;
                     }
-                } catch (e) {
-                    console.log(fileName + " faylini o'qishda xatolik:", e);
                 }
+            } catch (e) {
+                console.log("Goliblar faylini o'qishda xatolik:", e);
+            }
+
+            // 2. Savdoda qatlamini yuklash (Qizil/To'q sariq rangda bo'ladi)
+            try {
+                const res2 = await fetch(encodeURIComponent("Savdoda.geojson") + '?t=' + new Date().getTime());
+                if (res2.ok) {
+                    const data2 = await res2.json();
+                    if (data2 && Array.isArray(data2.features)) {
+                        data2.features.forEach(f => {
+                            f._layerType = 'sale'; // Turi: Savdoda
+                            if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                            featureCollection.features.push(f);
+                        });
+                        loaded = true;
+                    }
+                }
+            } catch (e) {
+                console.log("Savdoda faylini o'qishda xatolik:", e);
             }
 
             if (!loaded) {
@@ -163,9 +180,6 @@
             }
 
             if (featureCollection.features.length > 0) {
-                featureCollection.features.forEach(f => {
-                    if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                });
                 updateMap();
                 updateColumnSelectors();
             }
@@ -184,20 +198,20 @@
                 try {
                     if (fileName.endsWith('.geojson') || fileName.endsWith('.json')) {
                         const text = await file.text();
-                        addParsedData(JSON.parse(text));
+                        addParsedData(JSON.parse(text), 'custom');
                     } 
                     else if (fileName.endsWith('.kml')) {
                         const text = await file.text();
                         const dom = new DOMParser().parseFromString(text, 'text/xml');
-                        addParsedData(toGeoJSON.kml(dom));
+                        addParsedData(toGeoJSON.kml(dom), 'custom');
                     } 
                     else if (fileName.endsWith('.zip')) {
                         const buffer = await file.arrayBuffer();
                         const geojson = await shp(buffer);
                         if (Array.isArray(geojson)) {
-                            geojson.forEach(item => addParsedData(item));
+                            geojson.forEach(item => addParsedData(item, 'custom'));
                         } else {
-                            addParsedData(geojson);
+                            addParsedData(geojson, 'custom');
                         }
                     }
                 } catch (err) {
@@ -211,7 +225,7 @@
             updateColumnSelectors();
         });
 
-        function addParsedData(json) {
+        function addParsedData(json, type = 'winner') {
             if (!json) return;
             let feats = [];
             if (json.type === "FeatureCollection" && Array.isArray(json.features)) {
@@ -225,6 +239,7 @@
             }
 
             feats.forEach(f => {
+                f._layerType = type;
                 if (f.properties) {
                     Object.keys(f.properties).forEach(k => availableKeys.add(k));
                 }
@@ -260,13 +275,22 @@
             try {
                 currentLayer = L.geoJSON(featureCollection, {
                     style: function (feature) {
-                        return { color: '#3388ff', weight: 3, fillOpacity: 0.2 };
+                        // Qatlam turiga qarab rang berish:
+                        // 'sale' (Savdoda.geojson) -> Qizil/To'q sariq rang
+                        // 'winner' (tanlovi g'olibi) -> Ko'k rang
+                        if (feature && feature._layerType === 'sale') {
+                            return { color: '#e74c3c', weight: 3, fillOpacity: 0.3, fillColor: '#e74c3c' };
+                        } else {
+                            return { color: '#3388ff', weight: 3, fillOpacity: 0.2, fillColor: '#3388ff' };
+                        }
                     },
                     onEachFeature: function (feature, layer) {
                         layerMap.set(feature, layer);
                         if (feature && feature.properties) {
                             let featIndex = featureCollection.features.indexOf(feature);
-                            let popupContent = `<div style='max-height:160px; overflow-y:auto;'><b>Xossalar jadvali:</b><table class='popup-table'><tr><th>Maydon</th><th>Qiymat</th></tr>`;
+                            let statusText = feature._layerType === 'sale' ? '<b style="color:#e74c3c;">Holati: Savdoda</b>' : '<b style="color:#3388ff;">Holati: Gʻolib aniqlangan</b>';
+                            
+                            let popupContent = `<div style='max-height:160px; overflow-y:auto;'>${statusText}<table class='popup-table' style='margin-top:6px;'><tr><th>Maydon</th><th>Qiymat</th></tr>`;
                             for (let key in feature.properties) {
                                 popupContent += `<tr><td><b>${key}</b></td><td>${feature.properties[key]}</td></tr>`;
                             }
@@ -365,10 +389,11 @@
                         if (layer) {
                             found = true;
                             if (highlightedLayer) {
-                                highlightedLayer.setStyle({ color: '#3388ff', weight: 3, fillOpacity: 0.2 });
+                                let origColor = highlightedLayer.feature && highlightedLayer.feature._layerType === 'sale' ? '#e74c3c' : '#3388ff';
+                                highlightedLayer.setStyle({ color: origColor, fillColor: origColor, weight: 3, fillOpacity: 0.2 });
                             }
                             highlightedLayer = layer;
-                            layer.setStyle({ color: '#e74c3c', fillColor: '#e74c3c', fillOpacity: 0.6, weight: 5 });
+                            layer.setStyle({ color: '#27ae60', fillColor: '#27ae60', fillOpacity: 0.7, weight: 5 }); // Topilganda yashil rangda yaltiraydi
 
                             if (layer.getBounds) {
                                 map.fitBounds(layer.getBounds());
@@ -399,7 +424,7 @@
             let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
             kml += `  <Style id="redOutline">\n`;
             kml += `    <LineStyle><color>ff0000ff</color><width>3</width></LineStyle>\n`;
-            knl += `    <PolyStyle><fill>0</fill></PolyStyle>\n`;
+            kml += `    <PolyStyle><fill>0</fill></PolyStyle>\n`;
             kml += `  </Style>\n`;
             
             featureCollection.features.forEach((feat, idx) => {
