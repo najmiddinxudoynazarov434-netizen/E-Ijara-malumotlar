@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xarita Paneli va O'lchash</title>
+    <title>Xarita Paneli va Qatlamlar</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- Leaflet Measure CSS -->
@@ -102,7 +102,23 @@
         });
 
         const map = L.map('map', { center: [41.2995, 69.2401], zoom: 12, layers: [osmLayer] });
-        L.control.layers({ "Standard": osmLayer, "Satellite": satelliteLayer }).addTo(map);
+
+        // Qatlamlar guruhlari (Layer Groups)
+        const winnerGroup = L.layerGroup().addTo(map);
+        const saleGroup = L.layerGroup().addTo(map);
+
+        // Xarita boshqaruv paneli (O'ng yuqori burchakda qatlamlarni yoqib-o'chirish uchun)
+        const baseMaps = {
+            "Standard": osmLayer,
+            "Satellite": satelliteLayer
+        };
+        
+        const overlayMaps = {
+            "🏆 G'olibi aniqlangan": winnerGroup,
+            "🛒 Savdoda": saleGroup
+        };
+
+        const layerControl = L.control.layers(baseMaps, overlayMaps, { collapsed: false }).addTo(map);
 
         L.control.measure({
             position: 'topleft',
@@ -115,7 +131,6 @@
         }).addTo(map);
 
         let featureCollection = { type: "FeatureCollection", features: [] };
-        let currentLayer = null;
         let availableKeys = new Set();
         let layerMap = new Map();
         let highlightedLayer = null;
@@ -128,17 +143,18 @@
         async function loadData() {
             let loaded = false;
 
-            // 1. Tanlovi g'olibi aniqlangan qatlamini yuklash (Ko'k rangda bo'ladi)
+            // 1. Tanlovi g'olibi aniqlangan qatlamini yuklash (Ko'k rangda)
             try {
                 const res1 = await fetch(encodeURIComponent("tanlovi g'olibi aniqlangan.geojson") + '?t=' + new Date().getTime());
                 if (res1.ok) {
                     const data1 = await res1.json();
                     if (data1 && Array.isArray(data1.features)) {
                         data1.features.forEach(f => {
-                            f._layerType = 'winner'; // Turi: Golib
+                            f._layerType = 'winner';
                             if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
                             featureCollection.features.push(f);
                         });
+                        addFeaturesToGroup(data1, winnerGroup, 'winner', '#3388ff');
                         loaded = true;
                     }
                 }
@@ -146,17 +162,18 @@
                 console.log("Goliblar faylini o'qishda xatolik:", e);
             }
 
-            // 2. Savdoda qatlamini yuklash (Qizil/To'q sariq rangda bo'ladi)
+            // 2. Savdoda qatlamini yuklash (Qizil rangda)
             try {
                 const res2 = await fetch(encodeURIComponent("Savdoda.geojson") + '?t=' + new Date().getTime());
                 if (res2.ok) {
                     const data2 = await res2.json();
                     if (data2 && Array.isArray(data2.features)) {
                         data2.features.forEach(f => {
-                            f._layerType = 'sale'; // Turi: Savdoda
+                            f._layerType = 'sale';
                             if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
                             featureCollection.features.push(f);
                         });
+                        addFeaturesToGroup(data2, saleGroup, 'sale', '#e74c3c');
                         loaded = true;
                     }
                 }
@@ -164,25 +181,43 @@
                 console.log("Savdoda faylini o'qishda xatolik:", e);
             }
 
-            if (!loaded) {
-                const saved = localStorage.getItem('savedMapFeatures');
-                if (saved) {
-                    try {
-                        const parsed = JSON.parse(saved);
-                        if (parsed && Array.isArray(parsed.features)) {
-                            featureCollection = parsed;
-                            loaded = true;
+            if (featureCollection.features.length > 0) {
+                updateColumnSelectors();
+                try {
+                    let bounds = L.featureGroup([winnerGroup, saleGroup]).getBounds();
+                    if (bounds.isValid()) map.fitBounds(bounds);
+                } catch(err) {}
+            }
+        }
+
+        function addFeaturesToGroup(geoJsonData, group, type, color) {
+            const geoJsonLayer = L.geoJSON(geoJsonData, {
+                style: function (feature) {
+                    return { color: color, weight: 3, fillOpacity: 0.25, fillColor: color };
+                },
+                onEachFeature: function (feature, layer) {
+                    layerMap.set(feature, layer);
+                    if (feature && feature.properties) {
+                        let featIndex = featureCollection.features.indexOf(feature);
+                        let statusText = type === 'sale' ? '<b style="color:#e74c3c;">Holati: Savdoda</b>' : '<b style="color:#3388ff;">Holati: Gʻolib aniqlangan</b>';
+                        
+                        let popupContent = `<div style='max-height:160px; overflow-y:auto;'>${statusText}<table class='popup-table' style='margin-top:6px;'><tr><th>Maydon</th><th>Qiymat</th></tr>`;
+                        for (let key in feature.properties) {
+                            popupContent += `<tr><td><b>${key}</b></td><td>${feature.properties[key]}</td></tr>`;
                         }
-                    } catch (err) {
-                        console.error("LocalStorage xatoligi:", err);
+                        popupContent += `</table></div>
+                            <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; text-align: center;">
+                                <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px; color: #333;">Tanlangan obyektni yuklab olish:</div>
+                                <div style="display: flex; gap: 5px; justify-content: center;">
+                                    <button onclick="downloadSingle(${featIndex}, 'geojson')" style="padding:6px 10px; font-size:11px; background:#0366d6; margin:0; width:auto; border-radius:4px;">GeoJSON</button>
+                                    <button onclick="downloadSingle(${featIndex}, 'kml')" style="padding:6px 10px; font-size:11px; background:#2ea44f; margin:0; width:auto; border-radius:4px;">KML</button>
+                                </div>
+                            </div>`;
+                        layer.bindPopup(popupContent, { maxWidth: 300 });
                     }
                 }
-            }
-
-            if (featureCollection.features.length > 0) {
-                updateMap();
-                updateColumnSelectors();
-            }
+            });
+            group.addLayer(geoJsonLayer);
         }
 
         document.getElementById('fileInput').addEventListener('change', async function(e) {
@@ -196,36 +231,34 @@
 
                 const fileName = file.name.toLowerCase();
                 try {
+                    let parsedData = null;
                     if (fileName.endsWith('.geojson') || fileName.endsWith('.json')) {
                         const text = await file.text();
-                        addParsedData(JSON.parse(text), 'custom');
+                        parsedData = JSON.parse(text);
                     } 
                     else if (fileName.endsWith('.kml')) {
                         const text = await file.text();
                         const dom = new DOMParser().parseFromString(text, 'text/xml');
-                        addParsedData(toGeoJSON.kml(dom), 'custom');
+                        parsedData = toGeoJSON.kml(dom);
                     } 
                     else if (fileName.endsWith('.zip')) {
                         const buffer = await file.arrayBuffer();
                         const geojson = await shp(buffer);
-                        if (Array.isArray(geojson)) {
-                            geojson.forEach(item => addParsedData(item, 'custom'));
-                        } else {
-                            addParsedData(geojson, 'custom');
-                        }
+                        parsedData = Array.isArray(geojson) ? geojson[0] : geojson;
+                    }
+
+                    if (parsedData) {
+                        addParsedDataAndDisplay(parsedData, 'winner', '#3388ff');
                     }
                 } catch (err) {
                     console.error("Xatolik:", err);
                     alert(`"${file.name}" faylini o'qishda xatolik!`);
                 }
             }
-
-            localStorage.setItem('savedMapFeatures', JSON.stringify(featureCollection));
-            updateMap();
             updateColumnSelectors();
         });
 
-        function addParsedData(json, type = 'winner') {
+        function addParsedDataAndDisplay(json, type, color) {
             if (!json) return;
             let feats = [];
             if (json.type === "FeatureCollection" && Array.isArray(json.features)) {
@@ -240,11 +273,11 @@
 
             feats.forEach(f => {
                 f._layerType = type;
-                if (f.properties) {
-                    Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                }
+                if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
                 featureCollection.features.push(f);
             });
+
+            addFeaturesToGroup(json, winnerGroup, type, color);
         }
 
         function updateColumnSelectors() {
@@ -265,54 +298,6 @@
                 if (key.toLowerCase() === 'regnum' || key.toLowerCase() === 'reg_num') opt2.selected = true;
                 searchSelect.appendChild(opt2);
             });
-        }
-
-        function updateMap() {
-            if (currentLayer) map.removeLayer(currentLayer);
-            layerMap.clear();
-            highlightedLayer = null;
-
-            try {
-                currentLayer = L.geoJSON(featureCollection, {
-                    style: function (feature) {
-                        // Qatlam turiga qarab rang berish:
-                        // 'sale' (Savdoda.geojson) -> Qizil/To'q sariq rang
-                        // 'winner' (tanlovi g'olibi) -> Ko'k rang
-                        if (feature && feature._layerType === 'sale') {
-                            return { color: '#e74c3c', weight: 3, fillOpacity: 0.3, fillColor: '#e74c3c' };
-                        } else {
-                            return { color: '#3388ff', weight: 3, fillOpacity: 0.2, fillColor: '#3388ff' };
-                        }
-                    },
-                    onEachFeature: function (feature, layer) {
-                        layerMap.set(feature, layer);
-                        if (feature && feature.properties) {
-                            let featIndex = featureCollection.features.indexOf(feature);
-                            let statusText = feature._layerType === 'sale' ? '<b style="color:#e74c3c;">Holati: Savdoda</b>' : '<b style="color:#3388ff;">Holati: Gʻolib aniqlangan</b>';
-                            
-                            let popupContent = `<div style='max-height:160px; overflow-y:auto;'>${statusText}<table class='popup-table' style='margin-top:6px;'><tr><th>Maydon</th><th>Qiymat</th></tr>`;
-                            for (let key in feature.properties) {
-                                popupContent += `<tr><td><b>${key}</b></td><td>${feature.properties[key]}</td></tr>`;
-                            }
-                            popupContent += `</table></div>
-                                <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; text-align: center;">
-                                    <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px; color: #333;">Tanlangan obyektni yuklab olish:</div>
-                                    <div style="display: flex; gap: 5px; justify-content: center;">
-                                        <button onclick="downloadSingle(${featIndex}, 'geojson')" style="padding:6px 10px; font-size:11px; background:#0366d6; margin:0; width:auto; border-radius:4px;">GeoJSON</button>
-                                        <button onclick="downloadSingle(${featIndex}, 'kml')" style="padding:6px 10px; font-size:11px; background:#2ea44f; margin:0; width:auto; border-radius:4px;">KML</button>
-                                    </div>
-                                </div>`;
-                            layer.bindPopup(popupContent, { maxWidth: 300 });
-                        }
-                    }
-                }).addTo(map);
-
-                if (featureCollection.features.length > 0) {
-                    map.fitBounds(currentLayer.getBounds());
-                }
-            } catch (e) {
-                console.error("Xaritani chizishda xatolik:", e);
-            }
         }
 
         function locateUser() {
@@ -390,10 +375,10 @@
                             found = true;
                             if (highlightedLayer) {
                                 let origColor = highlightedLayer.feature && highlightedLayer.feature._layerType === 'sale' ? '#e74c3c' : '#3388ff';
-                                highlightedLayer.setStyle({ color: origColor, fillColor: origColor, weight: 3, fillOpacity: 0.2 });
+                                highlightedLayer.setStyle({ color: origColor, fillColor: origColor, weight: 3, fillOpacity: 0.25 });
                             }
                             highlightedLayer = layer;
-                            layer.setStyle({ color: '#27ae60', fillColor: '#27ae60', fillOpacity: 0.7, weight: 5 }); // Topilganda yashil rangda yaltiraydi
+                            layer.setStyle({ color: '#27ae60', fillColor: '#27ae60', fillOpacity: 0.7, weight: 5 });
 
                             if (layer.getBounds) {
                                 map.fitBounds(layer.getBounds());
