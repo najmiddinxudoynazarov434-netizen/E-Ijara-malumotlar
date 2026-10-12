@@ -78,12 +78,12 @@
     </div>
 
     <div id="sidebar">
-        <h2>🗺️ Xarita Boshqaruvi</h2>
+        <h2>🗺️ Xarita Paneli</h2>
         
         <div class="section">
             <label>Yangi fayl qo'shish (GeoJSON, KML, SHP .zip):</label>
             <input type="file" id="fileInput" accept=".geojson,.json,.kml,.zip" multiple>
-            <div class="hint">Yuklagan ma'lumotlaringiz xotirada saqlanib qoladi.</div>
+            <div class="hint">Yuklagan poligonlaringiz xotirada saqlanib qoladi.</div>
             <ul id="fileList"></ul>
         </div>
 
@@ -125,7 +125,7 @@
     <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
 
     <script>
-        // PAROL (O'zingiz o'zgartirishingiz mumkin)
+        // PAROL (O'zingiz xohlaganingizcha o'zgartirishingiz mumkin)
         const CORRECT_PASSWORD = "123"; 
 
         function checkPassword() {
@@ -152,7 +152,6 @@
         let currentLayer = null;
         let availableKeys = new Set();
 
-        // Saqlangan ma'lumotlarni yuklash
         function loadSavedData() {
             const saved = localStorage.getItem('savedMapFeatures');
             if (saved) {
@@ -172,7 +171,6 @@
             }
         }
 
-        // Yangi fayllarni qo'shish va saqlash
         document.getElementById('fileInput').addEventListener('change', async function(e) {
             const files = e.target.files;
             const fileListEl = document.getElementById('fileList');
@@ -208,7 +206,6 @@
                 }
             }
 
-            // Brauzer xotirasiga saqlash
             localStorage.setItem('savedMapFeatures', JSON.stringify(featureCollection));
             updateMapAndTable();
             updateColumnSelector();
