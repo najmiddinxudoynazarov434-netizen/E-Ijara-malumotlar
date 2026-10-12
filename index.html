@@ -103,8 +103,9 @@
     <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
 
     <script>
-        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
-        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri' });
+        // Zoom muammosini oldini olish uchun maxNativeZoom qo'shildi
+        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 18, attribution: '© OpenStreetMap' });
+        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 18, attribution: '© Esri' });
 
         const map = L.map('map', { center: [41.2995, 69.2401], zoom: 12, layers: [osmLayer] });
         L.control.layers({ "Standard": osmLayer, "Satellite": satelliteLayer }).addTo(map);
@@ -115,7 +116,6 @@
         let layerMap = new Map();
         let highlightedLayer = null;
 
-        // Sahifa ochilishi bilanoq ma'lumotlarni yuklashni boshlash
         window.addEventListener('DOMContentLoaded', async () => {
             await loadData();
         });
@@ -123,7 +123,6 @@
         async function loadData() {
             let loaded = false;
             try {
-                // To'g'ridan-to'g'ri data.geojson faylini o'qishga urinish
                 const response = await fetch('data.geojson?t=' + new Date().getTime());
                 if (response.ok) {
                     const data = await response.json();
@@ -136,7 +135,6 @@
                 console.log("Tarmoqdan o'qishda xatolik:", e);
             }
 
-            // Agar tarmoqdan kelmasa, localStorage'dan olamiz
             if (!loaded) {
                 const saved = localStorage.getItem('savedMapFeatures');
                 if (saved) {
