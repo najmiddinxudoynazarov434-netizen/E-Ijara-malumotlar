@@ -416,6 +416,7 @@
                 let props = feat.properties || {};
                 let row = [index + 1];
 
+                keysArray.keys().forEach(() => {}); // placeholder
                 keysArray.forEach(key => {
                     let val = props[key] !== undefined ? props[key] : "";
                     val = String(val).replace(/"/g, '""');
