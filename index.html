@@ -133,13 +133,13 @@
         async function loadData() {
             let loaded = false;
 
-            // Avval LocalStorage'dan tekshiramiz (agar foydalanuvchi qatlamni o'zgartirgan bo'lsa)
             const savedState = localStorage.getItem('customMapFeatures');
             if (savedState) {
                 try {
                     const parsed = JSON.parse(savedState);
                     if (parsed && Array.isArray(parsed.features) && parsed.features.length > 0) {
                         featureCollection = parsed;
+                        ensureIds();
                         renderAllFeatures();
                         loaded = true;
                     }
@@ -178,9 +178,22 @@
                 } catch (e) { console.log("Savdoda fayli topilmadi"); }
 
                 if (featureCollection.features.length > 0) {
+                    ensureIds();
                     renderAllFeatures();
                 }
             }
+        }
+
+        // Har bir obyektga unikal ID berish
+        function ensureIds() {
+            featureCollection.features.forEach((f, idx) => {
+                if (!f._uniqueId) {
+                    f._uniqueId = 'feat_' + idx + '_' + Math.random().toString(36).substr(2, 5);
+                }
+                if (f.properties) {
+                    Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                }
+            });
         }
 
         function renderAllFeatures() {
@@ -188,7 +201,7 @@
             saleGroup.clearLayers();
             layerMap.clear();
 
-            featureCollection.features.forEach((feat, index) => {
+            featureCollection.features.forEach((feat) => {
                 let color = feat._layerType === 'sale' ? '#f39c12' : '#3388ff';
                 let targetGroup = feat._layerType === 'sale' ? saleGroup : winnerGroup;
 
@@ -200,6 +213,7 @@
                             let statusText = feat._layerType === 'sale' ? '<b style="color:#f39c12;">Holati: Savdoda</b>' : '<b style="color:#3388ff;">Holati: Gʻolib aniqlangan</b>';
                             let switchBtnText = feat._layerType === 'sale' ? "🏆 G'olibga o'tkazish" : "🛒 Savdoga o'tkazish";
                             let switchTarget = feat._layerType === 'sale' ? 'winner' : 'sale';
+                            let uId = feat._uniqueId;
 
                             let popupContent = `<div style='max-height:160px; overflow-y:auto;'>${statusText}<table class='popup-table' style='margin-top:6px;'><tr><th>Maydon</th><th>Qiymat</th></tr>`;
                             for (let key in feature.properties) {
@@ -207,11 +221,11 @@
                             }
                             popupContent += `</table></div>
                                 <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; text-align: center;">
-                                    <button onclick="switchLayer(${index}, '${switchTarget}')" style="padding:6px 10px; font-size:11px; background:#e67e22; margin-bottom:5px; width:100%; border-radius:4px;">${switchBtnText}</button>
+                                    <button onclick="switchLayer('${uId}', '${switchTarget}')" style="padding:6px 10px; font-size:11px; background:#e67e22; margin-bottom:5px; width:100%; border-radius:4px; cursor:pointer;">${switchBtnText}</button>
                                     <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px; color: #333;">Yuklab olish:</div>
                                     <div style="display: flex; gap: 5px; justify-content: center;">
-                                        <button onclick="downloadSingle(${index}, 'geojson')" style="padding:6px 10px; font-size:11px; background:#0366d6; margin:0; width:auto; border-radius:4px;">GeoJSON</button>
-                                        <button onclick="downloadSingle(${index}, 'kml')" style="padding:6px 10px; font-size:11px; background:#2ea44f; margin:0; width:auto; border-radius:4px;">KML</button>
+                                        <button onclick="downloadSingleByUid('${uId}', 'geojson')" style="padding:6px 10px; font-size:11px; background:#0366d6; margin:0; width:auto; border-radius:4px;">GeoJSON</button>
+                                        <button onclick="downloadSingleByUid('${uId}', 'kml')" style="padding:6px 10px; font-size:11px; background:#2ea44f; margin:0; width:auto; border-radius:4px;">KML</button>
                                     </div>
                                 </div>`;
                             layer.bindPopup(popupContent, { maxWidth: 300 });
@@ -222,19 +236,16 @@
             });
 
             updateColumnSelectors();
-            try {
-                let bounds = L.featureGroup([winnerGroup, saleGroup]).getBounds();
-                if (bounds.isValid()) map.fitBounds(bounds);
-            } catch(err) {}
         }
 
-        // Qatlamni boshqasiga o'tkazish funksiyasi
-        function switchLayer(index, newType) {
-            if (featureCollection.features[index]) {
-                featureCollection.features[index]._layerType = newType;
+        // Unikal ID bo'yicha qatlamni boshqasiga o'tkazish
+        function switchLayer(uid, newType) {
+            const feat = featureCollection.features.find(f => f._uniqueId === uid);
+            if (feat) {
+                feat._layerType = newType;
                 localStorage.setItem('customMapFeatures', JSON.stringify(featureCollection));
                 renderAllFeatures();
-                alert("Obyekt muvaffaqiyatli ko'chirildi!");
+                map.closePopup();
             }
         }
 
@@ -269,6 +280,7 @@
                         let feats = parsedData.type === "FeatureCollection" ? parsedData.features : [parsedData];
                         feats.forEach(f => {
                             f._layerType = 'winner';
+                            f._uniqueId = 'feat_' + Math.random().toString(36).substr(2, 9);
                             if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
                             featureCollection.features.push(f);
                         });
@@ -317,8 +329,8 @@
             alert("Geolokatsiyani aniqlab bo'lmadi: " + e.message);
         });
 
-        function downloadSingle(index, format) {
-            const feat = featureCollection.features[index];
+        function downloadSingleByUid(uid, format) {
+            const feat = featureCollection.features.find(f => f._uniqueId === uid);
             if (!feat) return;
 
             const singleCollection = { type: "FeatureCollection", features: [feat] };
@@ -326,14 +338,14 @@
             if (format === 'geojson') {
                 const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(singleCollection));
                 const a = document.createElement('a');
-                a.href = dataStr; a.download = `obyekt_${index + 1}.geojson`;
+                a.href = dataStr; a.download = `obyekt_${uid}.geojson`;
                 document.body.appendChild(a); a.click(); a.remove();
             } 
             else if (format === 'kml') {
                 let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
                 kml += `  <Style id="redOutline">\n    <LineStyle><color>ff0000ff</color><width>3</width></LineStyle>\n    <PolyStyle><fill>0</fill></PolyStyle>\n  </Style>\n`;
 
-                let objName = `Obyekt ${index + 1}`;
+                let objName = `Obyekt`;
                 kml += `  <Placemark>\n    <name>${objName}</name>\n    <styleUrl>#redOutline</styleUrl>\n`;
                 if (feat.geometry && feat.geometry.coordinates) {
                     const geom = feat.geometry;
@@ -348,7 +360,7 @@
                 const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = url; a.download = `obyekt_${index + 1}.kml`;
+                a.href = url; a.download = `obyekt_${uid}.kml`;
                 a.click(); URL.revokeObjectURL(url);
             }
         }
@@ -407,8 +419,8 @@
             let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
             kml += `  <Style id="redOutline">\n    <LineStyle><color>ff0000ff</color><width>3</width></LineStyle>\n    <PolyStyle><fill>0</fill></PolyStyle>\n  </Style>\n`;
             
-            featureCollection.features.forEach((feat, idx) => {
-                let objName = `Obyekt ${idx + 1}`;
+            featureCollection.features.forEach((feat) => {
+                let objName = `Obyekt`;
                 if (selectedKey && feat.properties && feat.properties[selectedKey] !== undefined) {
                     objName = feat.properties[selectedKey];
                 }
