@@ -88,7 +88,7 @@
             <label>Atributlar Jadvali:</label>
             <div class="table-container">
                 <table id="attrTable">
-                    <thead><tr><th>№</th><th>Atributlar (Xossalar)</th></tr></thead>
+                    <thead><tr><th>№</th><th>Asosiy ma'lumotlar</th></tr></thead>
                     <tbody><tr><td colspan="2" style="text-align:center; color:#777;">Ma'lumot yo'q</td></tr></tbody>
                 </table>
             </div>
@@ -103,7 +103,6 @@
     <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
 
     <script>
-        // Zoom muammosini oldini olish uchun maxNativeZoom qo'shildi
         const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 18, attribution: '© OpenStreetMap' });
         const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 18, attribution: '© Esri' });
 
@@ -380,17 +379,23 @@
                 return;
             }
 
-            featureCollection.features.forEach((feat, index) => {
+            // Sahifa qotib qolmasligi uchun faqat birinchi 100 ta obyektni jadvalga chiqaramiz (qolganlari xaritada va qidiruvda ishlayveradi)
+            const limit = Math.min(featureCollection.features.length, 100);
+            for (let i = 0; i < limit; i++) {
+                const feat = featureCollection.features[i];
                 const tr = document.createElement('tr');
                 let props = feat.properties || {};
-                let subTable = "<table class='popup-table'><tr><th>Maydon</th><th>Qiymat</th></tr>";
+                let summaryText = "";
+                let count = 0;
                 for (let k in props) {
-                    subTable += `<tr><td><b>${k}</b></td><td>${props[k]}</td></tr>`;
+                    if (count < 2) {
+                        summaryText += `${k}: ${props[k]} | `;
+                    }
+                    count++;
                 }
-                subTable += "</table>";
-                tr.innerHTML = `<td>${index + 1}</td><td>${subTable}</td>`;
+                tr.innerHTML = `<td>${i + 1}</td><td style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">${summaryText}</td>`;
                 tbody.appendChild(tr);
-            });
+            }
         }
 
         function exportGeoJSON() {
