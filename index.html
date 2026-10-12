@@ -145,56 +145,66 @@
         });
 
         async function loadData() {
+            featureCollection.features = [];
+            availableKeys.clear();
+
             let loaded = false;
 
-            const savedState = localStorage.getItem('customMapFeatures');
-            if (savedState) {
-                try {
-                    const parsed = JSON.parse(savedState);
-                    if (parsed && Array.isArray(parsed.features) && parsed.features.length > 0) {
-                        featureCollection = parsed;
-                        ensureIds();
-                        renderAllFeatures();
+            // 1. Avval GitHub'dagi ikkala asosiy faylni o'qishga harakat qilamiz
+            try {
+                const res1 = await fetch(encodeURIComponent("tanlovi g'olibi aniqlangan.geojson") + '?t=' + new Date().getTime());
+                if (res1.ok) {
+                    const data1 = await res1.json();
+                    if (data1 && Array.isArray(data1.features)) {
+                        data1.features.forEach(f => {
+                            if (!f._layerType) f._layerType = 'winner';
+                            if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                            featureCollection.features.push(f);
+                        });
                         loaded = true;
                     }
-                } catch (e) {
-                    console.error("LocalStorage xatoligi:", e);
+                }
+            } catch (e) { console.log("Goliblar faylini o'qishda xatolik"); }
+
+            try {
+                const res2 = await fetch(encodeURIComponent("Savdoda.geojson") + '?t=' + new Date().getTime());
+                if (res2.ok) {
+                    const data2 = await res2.json();
+                    if (data2 && Array.isArray(data2.features)) {
+                        data2.features.forEach(f => {
+                            if (!f._layerType) f._layerType = 'sale';
+                            if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                            featureCollection.features.push(f);
+                        });
+                        loaded = true;
+                    }
+                }
+            } catch (e) { console.log("Savdoda faylini o'qishda xatolik"); }
+
+            // 2. Agar fayllardan o'qib bo'lmasa, oxirgi saqlangan localStorage holatini tekshiramiz
+            if (!loaded) {
+                const savedState = localStorage.getItem('customMapFeatures');
+                if (savedState) {
+                    try {
+                        const parsed = JSON.parse(savedState);
+                        if (parsed && Array.isArray(parsed.features) && parsed.features.length > 0) {
+                            featureCollection = parsed;
+                            featureCollection.features.forEach(f => {
+                                if (!f._layerType) f._layerType = 'winner';
+                                if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                            });
+                        }
+                    } catch (e) { console.error("LocalStorage xatoligi:", e); }
                 }
             }
 
-            if (!loaded) {
+            if (featureCollection.features.length > 0) {
+                ensureIds();
+                renderAllFeatures();
                 try {
-                    const res1 = await fetch(encodeURIComponent("tanlovi g'olibi aniqlangan.geojson") + '?t=' + new Date().getTime());
-                    if (res1.ok) {
-                        const data1 = await res1.json();
-                        if (data1 && Array.isArray(data1.features)) {
-                            data1.features.forEach(f => {
-                                f._layerType = 'winner';
-                                if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                                featureCollection.features.push(f);
-                            });
-                        }
-                    }
-                } catch (e) {}
-
-                try {
-                    const res2 = await fetch(encodeURIComponent("Savdoda.geojson") + '?t=' + new Date().getTime());
-                    if (res2.ok) {
-                        const data2 = await res2.json();
-                        if (data2 && Array.isArray(data2.features)) {
-                            data2.features.forEach(f => {
-                                f._layerType = 'sale';
-                                if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                                featureCollection.features.push(f);
-                            });
-                        }
-                    }
-                } catch (e) {}
-
-                if (featureCollection.features.length > 0) {
-                    ensureIds();
-                    renderAllFeatures();
-                }
+                    let bounds = L.featureGroup([winnerGroup, saleGroup]).getBounds();
+                    if (bounds.isValid()) map.fitBounds(bounds);
+                } catch(err) {}
             }
         }
 
@@ -202,9 +212,6 @@
             featureCollection.features.forEach((f, idx) => {
                 if (!f._uniqueId) {
                     f._uniqueId = 'feat_' + idx + '_' + Math.random().toString(36).substr(2, 5);
-                }
-                if (f.properties) {
-                    Object.keys(f.properties).forEach(k => availableKeys.add(k));
                 }
             });
         }
@@ -268,7 +275,6 @@
             targetGroup.addLayer(geoJsonLayer);
         }
 
-        // Qotmasligi uchun faqat mos obyektni ko'chirish
         function switchLayer(uid, newType) {
             const feat = featureCollection.features.find(f => f._uniqueId === uid);
             if (feat) {
