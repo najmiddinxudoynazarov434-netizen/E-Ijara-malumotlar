@@ -115,48 +115,49 @@
         let layerMap = new Map();
         let highlightedLayer = null;
 
-        // MASTER MA'LUMOTLAR (To'g'ridan-to'g'ri kod ichida turadi, hech qanday xatolik bermaydi)
-        const masterData = {
-            "type": "FeatureCollection",
-            "features": [
-                // FAYLINGIZDAGI MA'LUMOTLARNI SHU YERGA QO'YASIZ (agar hali ma'lumot bo'lmasa qavslar bo'sh turaveradi)
-            ]
-        };
-
-        window.addEventListener('DOMContentLoaded', () => {
-            loadMasterData();
+        // Sahifa ochilishi bilanoq ma'lumotlarni yuklashni boshlash
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadData();
         });
 
-        function loadMasterData() {
-            if (masterData && masterData.features && masterData.features.length > 0) {
-                featureCollection = masterData;
+        async function loadData() {
+            let loaded = false;
+            try {
+                // To'g'ridan-to'g'ri data.geojson faylini o'qishga urinish
+                const response = await fetch('data.geojson?t=' + new Date().getTime());
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data && Array.isArray(data.features) && data.features.length > 0) {
+                        featureCollection = data;
+                        loaded = true;
+                    }
+                }
+            } catch (e) {
+                console.log("Tarmoqdan o'qishda xatolik:", e);
+            }
+
+            // Agar tarmoqdan kelmasa, localStorage'dan olamiz
+            if (!loaded) {
+                const saved = localStorage.getItem('savedMapFeatures');
+                if (saved) {
+                    try {
+                        const parsed = JSON.parse(saved);
+                        if (parsed && Array.isArray(parsed.features)) {
+                            featureCollection = parsed;
+                            loaded = true;
+                        }
+                    } catch (err) {
+                        console.error("LocalStorage xatoligi:", err);
+                    }
+                }
+            }
+
+            if (loaded) {
                 featureCollection.features.forEach(f => {
                     if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
                 });
                 updateMapAndTable();
                 updateColumnSelectors();
-            } else {
-                loadSavedData();
-            }
-        }
-
-        function loadSavedData() {
-            const saved = localStorage.getItem('savedMapFeatures');
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    if (parsed && Array.isArray(parsed.features)) {
-                        featureCollection = parsed;
-                        featureCollection.features.forEach(f => {
-                            if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                        });
-                        updateMapAndTable();
-                        updateColumnSelectors();
-                    }
-                } catch (e) {
-                    console.error(e);
-                    localStorage.removeItem('savedMapFeatures');
-                }
             }
         }
 
