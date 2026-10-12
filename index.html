@@ -103,7 +103,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
     <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
-    <script src="https://unpkg.com/leaflet-measure@3.1.0/dist/leaflet-measure.js"></script>
+    <script src="https://unpkg.com/leaflet-measure@3.1.0/dist/leaflet.js"></script>
 
     <script>
         const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 18, attribution: '© OpenStreetMap' });
@@ -150,52 +150,47 @@
 
             let loaded = false;
 
-            // 1. Avval GitHub'dagi ikkala asosiy faylni o'qishga harakat qilamiz
-            try {
-                const res1 = await fetch(encodeURIComponent("tanlovi g'olibi aniqlangan.geojson") + '?t=' + new Date().getTime());
-                if (res1.ok) {
-                    const data1 = await res1.json();
-                    if (data1 && Array.isArray(data1.features)) {
-                        data1.features.forEach(f => {
-                            if (!f._layerType) f._layerType = 'winner';
-                            if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                            featureCollection.features.push(f);
-                        });
+            // 1. LocalStorage dan tekshiramiz
+            const savedState = localStorage.getItem('customMapFeatures');
+            if (savedState) {
+                try {
+                    const parsed = JSON.parse(savedState);
+                    if (parsed && Array.isArray(parsed.features) && parsed.features.length > 0) {
+                        featureCollection = parsed;
                         loaded = true;
                     }
-                }
-            } catch (e) { console.log("Goliblar faylini o'qishda xatolik"); }
+                } catch (e) { console.error("LocalStorage xatoligi:", e); }
+            }
 
-            try {
-                const res2 = await fetch(encodeURIComponent("Savdoda.geojson") + '?t=' + new Date().getTime());
-                if (res2.ok) {
-                    const data2 = await res2.json();
-                    if (data2 && Array.isArray(data2.features)) {
-                        data2.features.forEach(f => {
-                            if (!f._layerType) f._layerType = 'sale';
-                            if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                            featureCollection.features.push(f);
-                        });
-                        loaded = true;
-                    }
-                }
-            } catch (e) { console.log("Savdoda faylini o'qishda xatolik"); }
-
-            // 2. Agar fayllardan o'qib bo'lmasa, oxirgi saqlangan localStorage holatini tekshiramiz
+            // 2. Agar localStorage bo'sh bo'lsa, tarmoqdan o'qishga urinish
             if (!loaded) {
-                const savedState = localStorage.getItem('customMapFeatures');
-                if (savedState) {
-                    try {
-                        const parsed = JSON.parse(savedState);
-                        if (parsed && Array.isArray(parsed.features) && parsed.features.length > 0) {
-                            featureCollection = parsed;
-                            featureCollection.features.forEach(f => {
+                try {
+                    const res1 = await fetch("tanlovi%20g'olibi%20aniqlangan.geojson?t=" + new Date().getTime());
+                    if (res1.ok) {
+                        const data1 = await res1.json();
+                        if (data1 && Array.isArray(data1.features)) {
+                            data1.features.forEach(f => {
                                 if (!f._layerType) f._layerType = 'winner';
-                                if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
+                                featureCollection.features.push(f);
                             });
+                            loaded = true;
                         }
-                    } catch (e) { console.error("LocalStorage xatoligi:", e); }
-                }
+                    }
+                } catch (e) {}
+
+                try {
+                    const res2 = await fetch("Savdoda.geojson?t=" + new Date().getTime());
+                    if (res2.ok) {
+                        const data2 = await res2.json();
+                        if (data2 && Array.isArray(data2.features)) {
+                            data2.features.forEach(f => {
+                                if (!f._layerType) f._layerType = 'sale';
+                                featureCollection.features.push(f);
+                            });
+                            loaded = true;
+                        }
+                    }
+                } catch (e) {}
             }
 
             if (featureCollection.features.length > 0) {
@@ -212,6 +207,9 @@
             featureCollection.features.forEach((f, idx) => {
                 if (!f._uniqueId) {
                     f._uniqueId = 'feat_' + idx + '_' + Math.random().toString(36).substr(2, 5);
+                }
+                if (f.properties) {
+                    Object.keys(f.properties).forEach(k => availableKeys.add(k));
                 }
             });
         }
@@ -326,7 +324,7 @@
                     if (parsedData) {
                         let feats = parsedData.type === "FeatureCollection" ? parsedData.features : [parsedData];
                         feats.forEach(f => {
-                            f._layerType = 'winner';
+                            if (!f._layerType) f._layerType = 'winner';
                             f._uniqueId = 'feat_' + Math.random().toString(36).substr(2, 9);
                             if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
                             featureCollection.features.push(f);
@@ -338,6 +336,7 @@
                 }
             }
             localStorage.setItem('customMapFeatures', JSON.stringify(featureCollection));
+            ensureIds();
             renderAllFeatures();
         });
 
