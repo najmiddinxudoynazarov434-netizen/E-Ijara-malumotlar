@@ -127,17 +127,24 @@
 
         async function loadData() {
             let loaded = false;
-            try {
-                const response = await fetch('data.geojson?t=' + new Date().getTime());
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data && Array.isArray(data.features) && data.features.length > 0) {
-                        featureCollection = data;
-                        loaded = true;
+            const filesToFetch = [
+                "tanlovi g'olibi aniqlangan.geojson",
+                "Savdoda.geojson"
+            ];
+
+            for (let fileName of filesToFetch) {
+                try {
+                    const response = await fetch(encodeURIComponent(fileName) + '?t=' + new Date().getTime());
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && Array.isArray(data.features) && data.features.length > 0) {
+                            addParsedData(data);
+                            loaded = true;
+                        }
                     }
+                } catch (e) {
+                    console.log(fileName + " faylini o'qishda xatolik:", e);
                 }
-            } catch (e) {
-                console.log("Tarmoqdan o'qishda xatolik:", e);
             }
 
             if (!loaded) {
@@ -155,7 +162,7 @@
                 }
             }
 
-            if (loaded) {
+            if (featureCollection.features.length > 0) {
                 featureCollection.features.forEach(f => {
                     if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
                 });
@@ -392,7 +399,7 @@
             let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
             kml += `  <Style id="redOutline">\n`;
             kml += `    <LineStyle><color>ff0000ff</color><width>3</width></LineStyle>\n`;
-            kml += `    <PolyStyle><fill>0</fill></PolyStyle>\n`;
+            knl += `    <PolyStyle><fill>0</fill></PolyStyle>\n`;
             kml += `  </Style>\n`;
             
             featureCollection.features.forEach((feat, idx) => {
