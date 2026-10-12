@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xarita Paneli va Saqlash</title>
+    <title>Xarita Paneli va Qidiruv</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
@@ -36,7 +36,7 @@
         h2 { font-size: 20px; margin-bottom: 20px; color: #1a73e8; display: flex; align-items: center; gap: 8px; }
         .section { margin-bottom: 18px; background: #f8f9fa; padding: 14px; border-radius: 8px; border: 1px solid #e1e4e8; }
         .section label { font-weight: bold; font-size: 13px; display: block; margin-bottom: 6px; color: #333; }
-        input[type="file"], select { width: 100%; font-size: 12px; padding: 8px; background: white; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; margin-top: 4px; }
+        input[type="file"], input[type="text"], select { width: 100%; font-size: 12px; padding: 8px; background: white; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; margin-top: 4px; }
         button { background: #2ea44f; color: white; border: none; padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; width: 100%; margin-top: 8px; font-weight: bold; transition: background 0.2s; }
         button:hover { background: #2c974b; }
         .btn-secondary { background: #0366d6; }
@@ -50,7 +50,7 @@
         table { width: 100%; font-size: 11px; border-collapse: collapse; margin-top: 8px; background: white; }
         th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
         th { background: #f1f8ff; color: #333; }
-        .table-container { max-height: 180px; overflow-y: auto; margin-top: 5px; border-radius: 6px; border: 1px solid #ddd; }
+        .table-container { max-height: 160px; overflow-y: auto; margin-top: 5px; border-radius: 6px; border: 1px solid #ddd; }
         
         .popup-table { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 5px; }
         .popup-table th, .popup-table td { border: 1px solid #ccc; padding: 4px 6px; }
@@ -85,6 +85,15 @@
             <input type="file" id="fileInput" accept=".geojson,.json,.kml,.zip" multiple>
             <div class="hint">Yuklagan poligonlaringiz xotirada saqlanib qoladi.</div>
             <ul id="fileList"></ul>
+        </div>
+
+        <div class="section">
+            <label>🔍 Poligonni izlash:</label>
+            <select id="searchKeySelect">
+                <option value="">-- Ustunni tanlang --</option>
+            </select>
+            <input type="text" id="searchInput" placeholder="Qidirilayotgan qiymat (masalan, regnum)..." style="margin-top: 6px;">
+            <button class="btn-secondary" onclick="searchFeature()" style="margin-top: 6px;">Izlash</button>
         </div>
 
         <div class="section">
@@ -150,6 +159,7 @@
         let featureCollection = { type: "FeatureCollection", features: [] };
         let currentLayer = null;
         let availableKeys = new Set();
+        let layerMap = new Map(); // Har bir obyektning qatlamini saqlash uchun
 
         function loadSavedData() {
             const saved = localStorage.getItem('savedMapFeatures');
@@ -162,7 +172,7 @@
                             if (f.properties) Object.keys(f.properties).forEach(k => availableKeys.add(k));
                         });
                         updateMapAndTable();
-                        updateColumnSelector();
+                        updateColumnSelectors();
                     }
                 } catch (e) {
                     console.error("Saqlangan ma'lumotni o'qish xatosi:", e);
@@ -193,190 +203,4 @@
                     else if (fileName.endsWith('.zip')) {
                         const buffer = await file.arrayBuffer();
                         const geojson = await shp(buffer);
-                        if (Array.isArray(geojson)) {
-                            geojson.forEach(item => addParsedData(item));
-                        } else {
-                            addParsedData(geojson);
-                        }
-                    }
-                } catch (err) {
-                    console.error("Xatolik:", err);
-                    alert(`"${file.name}" faylini o'qishda xatolik!`);
-                }
-            }
-
-            localStorage.setItem('savedMapFeatures', JSON.stringify(featureCollection));
-            updateMapAndTable();
-            updateColumnSelector();
-        });
-
-        function addParsedData(json) {
-            if (!json) return;
-            let feats = [];
-            if (json.type === "FeatureCollection" && Array.isArray(json.features)) {
-                feats = json.features;
-            } else if (json.type === "Feature") {
-                feats = [json];
-            } else if (Array.isArray(json)) {
-                feats = json;
-            } else if (json.geometry) {
-                feats = [{ type: "Feature", geometry: json.geometry, properties: json.properties || {} }];
-            }
-
-            feats.forEach(f => {
-                if (f.properties) {
-                    Object.keys(f.properties).forEach(k => availableKeys.add(k));
-                }
-                featureCollection.features.push(f);
-            });
-        }
-
-        function updateColumnSelector() {
-            const select = document.getElementById('nameColumnSelect');
-            select.innerHTML = '<option value="">-- Avtomatik (Obyekt raqami) --</option>';
-            availableKeys.forEach(key => {
-                const opt = document.createElement('option');
-                opt.value = key;
-                opt.textContent = key;
-                if (key.toLowerCase() === 'regnum' || key.toLowerCase() === 'reg_num') opt.selected = true;
-                select.appendChild(opt);
-            });
-        }
-
-        function updateMapAndTable() {
-            if (currentLayer) map.removeLayer(currentLayer);
-
-            try {
-                currentLayer = L.geoJSON(featureCollection, {
-                    onEachFeature: function (feature, layer) {
-                        if (feature && feature.properties) {
-                            let popupContent = "<div style='max-height:180px; overflow-y:auto;'><b>Xossalar jadvali:</b><table class='popup-table'><tr><th>Maydon</th><th>Qiymat</th></tr>";
-                            for (let key in feature.properties) {
-                                popupContent += `<tr><td><b>${key}</b></td><td>${feature.properties[key]}</td></tr>`;
-                            }
-                            popupContent += "</table></div>";
-                            layer.bindPopup(popupContent);
-                        }
-                    }
-                }).addTo(map);
-
-                if (featureCollection.features.length > 0) {
-                    map.fitBounds(currentLayer.getBounds());
-                }
-            } catch (e) {
-                console.error("Xaritani chizishda xatolik:", e);
-            }
-
-            updateTable();
-        }
-
-        function clearAllData() {
-            if (confirm("Barcha saqlangan ma'lumotlarni o'chirib tashlamoqchimisiz?")) {
-                localStorage.removeItem('savedMapFeatures');
-                featureCollection = { type: "FeatureCollection", features: [] };
-                availableKeys.clear();
-                if (currentLayer) map.removeLayer(currentLayer);
-                document.getElementById('fileList').innerHTML = '';
-                document.getElementById('nameColumnSelect').innerHTML = '<option value="">-- Avtomatik (Obyekt raqami) --</option>';
-                document.querySelector('#attrTable tbody').innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
-            }
-        }
-
-        function updateTable() {
-            const tbody = document.querySelector('#attrTable tbody');
-            tbody.innerHTML = '';
-            if (featureCollection.features.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:#777;">Ma\'lumot yo\'q</td></tr>';
-                return;
-            }
-
-            featureCollection.features.forEach((feat, index) => {
-                const tr = document.createElement('tr');
-                let props = feat.properties || {};
-                let subTable = "<table class='popup-table'><tr><th>Maydon</th><th>Qiymat</th></tr>";
-                for (let k in props) {
-                    subTable += `<tr><td><b>${k}</b></td><td>${props[k]}</td></tr>`;
-                }
-                subTable += "</table>";
-                tr.innerHTML = `<td>${index + 1}</td><td>${subTable}</td>`;
-                tbody.appendChild(tr);
-            });
-        }
-
-        function exportGeoJSON() {
-            if (featureCollection.features.length === 0) { alert("Eksport uchun ma'lumot yo'q!"); return; }
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(featureCollection));
-            const a = document.createElement('a');
-            a.href = dataStr; a.download = "birlashgan_xarita.geojson";
-            document.body.appendChild(a); a.click(); a.remove();
-        }
-
-        function exportKML() {
-            if (featureCollection.features.length === 0) { alert("Eksport uchun ma'lumot yo'q!"); return; }
-            const selectedKey = document.getElementById('nameColumnSelect').value;
-            let kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
-            
-            featureCollection.features.forEach((feat, idx) => {
-                let objName = `Obyekt ${idx + 1}`;
-                if (selectedKey && feat.properties && feat.properties[selectedKey] !== undefined) {
-                    objName = feat.properties[selectedKey];
-                }
-                kml += `  <Placemark>\n    <name>${objName}</name>\n`;
-                if (feat.geometry && feat.geometry.coordinates) {
-                    const geom = feat.geometry;
-                    if (geom.type === "Point") {
-                        kml += `    <Point><coordinates>${geom.coordinates[0]},${geom.coordinates[1]}</coordinates></Point>\n`;
-                    } else if (geom.type === "Polygon") {
-                        kml += `    <Polygon>\n      <outerBoundaryIs>\n        <LinearRing>\n          <coordinates>\n`;
-                        geom.coordinates[0].forEach(c => { kml += `            ${c[0]},${c[1]},0\n`; });
-                        kml += `          </coordinates>\n        </LinearRing>\n      </outerBoundaryIs>\n    </Polygon>\n`;
-                    }
-                }
-                kml += `  </Placemark>\n`;
-            });
-            kml += `</Document>\n</kml>`;
-
-            const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'xarita_tanlangan.kml';
-            a.click(); URL.revokeObjectURL(url);
-        }
-
-        // CSV eksport qilish (To'g'rilangan versiya: har bir xossa alohida ustun bo'ladi)
-        function exportCSV() {
-            if (featureCollection.features.length === 0) { alert("Eksport uchun ma'lumot yo'q!"); return; }
-
-            // Barcha mavjud atribut kalitlarini (ustun nomlarini) yig'ib chiqamiz
-            const keysArray = Array.from(availableKeys);
-            let headers = ["Index", ...keysArray];
-            
-            let csvRows = [];
-            csvRows.push(headers.join(","));
-
-            featureCollection.features.forEach((feat, index) => {
-                let props = feat.properties || {};
-                let row = [index + 1];
-
-                keysArray.forEach(key => {
-                    let val = props[key] !== undefined ? props[key] : "";
-                    // Vergul yoki qo'shtirnoqlar buzilib ketmasligi uchun tozalash
-                    val = String(val).replace(/"/g, '""');
-                    row.push(`"${val}"`);
-                });
-
-                csvRows.push(row.join(","));
-            });
-
-            const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + csvRows.join("\n");
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement('a');
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", "atributlar_jadval.csv");
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-        }
-    </script>
-</body>
-</html>
+                        if (Array.isArray(geojson
